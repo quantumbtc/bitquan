@@ -848,21 +848,26 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
 
         if (std::optional<std::string> rpcport_arg = gArgs.GetArg("-rpcport")) {
             // -rpcport was specified
-            const uint16_t rpcport_int{ToIntegral<uint16_t>(rpcport_arg.value()).value_or(0)};
-            if (rpcport_int == 0) {
-                // Uses argument provided as-is
-                // (rather than value parsed)
-                // to aid the user in troubleshooting
-                throw std::runtime_error(strprintf("Invalid port provided in -rpcport: %s", rpcport_arg.value()));
-            }
+            if (const auto rpcport_res{ToIntegral<uint16_t>(rpcport_arg.value())}) {
+                const uint16_t rpcport_int = *rpcport_res;
+                if (rpcport_int == 0) {
+                    // Uses argument provided as-is
+                    // (rather than value parsed)
+                    // to aid the user in troubleshooting
+                    throw std::runtime_error(strprintf("Invalid port provided in -rpcport: %s", rpcport_arg.value()));
+                }
 
-            // Use the valid port provided
-            port = rpcport_int;
+                // Use the valid port provided
+                port = rpcport_int;
 
-            // If there was a valid port provided in rpcconnect,
-            // rpcconnect_port is non-zero.
-            if (rpcconnect_port != 0) {
-                tfm::format(std::cerr, "Warning: Port specified in both -rpcconnect and -rpcport. Using -rpcport %u\n", port);
+                // If there was a valid port provided in rpcconnect,
+                // rpcconnect_port is non-zero.
+                if (rpcconnect_port != 0) {
+                    tfm::format(std::cerr, "Warning: Port specified in both -rpcconnect and -rpcport. Using -rpcport %u\n", port);
+                }
+            } else {
+                // Invalid port format
+                throw std::runtime_error(strprintf("Invalid port format provided in -rpcport: %s", rpcport_arg.value()));
             }
         }
     }
