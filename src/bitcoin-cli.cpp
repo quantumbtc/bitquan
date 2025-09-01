@@ -86,7 +86,8 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-generate",
                    strprintf("Generate blocks, equivalent to RPC getnewaddress followed by RPC generatetoaddress. Optional positional integer "
                              "arguments are number of blocks to generate (default: %s) and maximum iterations to try (default: %s), equivalent to "
-                             "RPC generatetoaddress nblocks and maxtries arguments. Example: bitcoin-cli -generate 4 1000",
+                             "RPC generatetoaddress nblocks and maxtries arguments. Use 'loop' as first argument for continuous mining. "
+                             "Examples: bitcoin-cli -generate 4 1000, bitcoin-cli -generate loop 1 1000",
                              DEFAULT_NBLOCKS, DEFAULT_MAX_TRIES),
                    ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
     argsman.AddArg("-addrinfo", "Get the number of addresses known to the node, per network and total, after filtering for quality and recency. The total number of addresses known to the node may be higher.", ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
@@ -772,6 +773,37 @@ protected:
     std::string address_str;
 };
 
+/** Process RPC generatetoaddress request in a continuous loop. */
+class GenerateLoopRequestHandler : public BaseRequestHandler
+{
+public:
+    UniValue PrepareRequest(const std::string& method, const std::vector<std::string>& args) override
+    {
+        address_str = args.at(1);
+        nblocks_per_iteration = std::stoi(args.at(0));
+        maxtries = args.size() > 2 ? std::stoi(args.at(2)) : 1000000;
+        
+        UniValue params{RPCConvertValues("generatetoaddress", args)};
+        return JSONRPCRequestObj("generatetoaddress", params, 1);
+    }
+
+    UniValue ProcessReply(const UniValue &reply) override
+    {
+        UniValue result(UniValue::VOBJ);
+        result.pushKV("address", address_str);
+        result.pushKV("blocks", reply.get_obj()["result"]);
+        result.pushKV("iteration_blocks", nblocks_per_iteration);
+        result.pushKV("max_tries", maxtries);
+        result.pushKV("status", "continuing");
+        return JSONRPCReplyObj(std::move(result), NullUniValue, /*id=*/1, JSONRPCVersion::V2);
+    }
+
+protected:
+    std::string address_str;
+    int nblocks_per_iteration;
+    int maxtries;
+};
+
 /** Process default single requests */
 struct DefaultRequestHandler : BaseRequestHandler {
     UniValue PrepareRequest(const std::string& method, const std::vector<std::string>& args) override
@@ -1199,11 +1231,27 @@ static UniValue GetNewAddress()
 static void SetGenerateToAddressArgs(const std::string& address, std::vector<std::string>& args)
 {
     if (args.size() > 2) throw std::runtime_error("too many arguments (maximum 2 for nblocks and maxtries)");
+    
+    // Check if this is a loop mining request
+    bool is_loop = !args.empty() && args.at(0) == "loop";
+    
     if (args.size() == 0) {
         args.emplace_back(DEFAULT_NBLOCKS);
-    } else if (args.at(0) == "0") {
+    } else if (args.at(0) == "0" && !is_loop) {
         throw std::runtime_error("the first argument (number of blocks to generate, default: " + DEFAULT_NBLOCKS + ") must be an integer value greater than zero");
+    } else if (is_loop) {
+        // For loop mining, use the second argument as nblocks, or default to 1
+        if (args.size() > 1) {
+            if (args.at(1) == "0") {
+                throw std::runtime_error("for loop mining, the number of blocks per iteration must be greater than zero");
+            }
+            args[0] = args[1]; // Move the nblocks value to first position
+            args.erase(args.begin() + 1); // Remove the duplicate
+        } else {
+            args[0] = DEFAULT_NBLOCKS; // Use default if no nblocks specified
+        }
     }
+    
     args.emplace(args.begin() + 1, address);
 }
 
@@ -1276,8 +1324,18 @@ static int CommandLineRPC(int argc, char *argv[])
             const UniValue getnewaddress{GetNewAddress()};
             const UniValue& error{getnewaddress.find_value("error")};
             if (error.isNull()) {
-                SetGenerateToAddressArgs(getnewaddress.find_value("result").get_str(), args);
-                rh.reset(new GenerateToAddressRequestHandler());
+                std::string address = getnewaddress.find_value("result").get_str();
+                SetGenerateToAddressArgs(address, args);
+                
+                // Check if this is a loop mining request
+                bool is_loop = !args.empty() && args.at(0) == "loop";
+                
+                if (is_loop) {
+                    // For loop mining, we need to handle it differently
+                    rh.reset(new GenerateLoopRequestHandler());
+                } else {
+                    rh.reset(new GenerateToAddressRequestHandler());
+                }
             } else {
                 ParseError(error, strPrint, nRet);
             }
@@ -1292,24 +1350,70 @@ static int CommandLineRPC(int argc, char *argv[])
             args.erase(args.begin()); // Remove trailing method name from arguments vector
         }
         if (nRet == 0) {
-            // Perform RPC call
-            const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
-            const UniValue reply = ConnectAndCallRPC(rh.get(), method, args, wallet_name);
-
-            // Parse reply
-            UniValue result = reply.find_value("result");
-            const UniValue& error = reply.find_value("error");
-            if (error.isNull()) {
-                if (gArgs.GetBoolArg("-getinfo", false)) {
-                    if (!wallet_name) {
-                        GetWalletBalances(result); // fetch multiwallet balances and append to result
+            // Check if this is a loop mining request
+            bool is_loop = gArgs.GetBoolArg("-generate", false) && !args.empty() && args.at(0) == "loop";
+            
+            if (is_loop) {
+                // For loop mining, continuously generate blocks
+                const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
+                std::string address = getnewaddress.find_value("result").get_str();
+                
+                tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
+                tfm::format(std::cout, "Press Ctrl+C to stop mining\n");
+                
+                int iteration = 1;
+                while (true) {
+                    try {
+                        // Prepare arguments for this iteration
+                        std::vector<std::string> loop_args = args;
+                        if (loop_args.size() > 1) {
+                            loop_args[0] = loop_args[1]; // Use second argument as nblocks
+                            loop_args.erase(loop_args.begin() + 1);
+                        }
+                        loop_args.emplace(loop_args.begin() + 1, address);
+                        
+                        // Call generatetoaddress
+                        const UniValue reply = ConnectAndCallRPC(rh.get(), "generatetoaddress", loop_args, wallet_name);
+                        
+                        // Parse reply
+                        UniValue result = reply.find_value("result");
+                        const UniValue& error = reply.find_value("error");
+                        
+                        if (error.isNull()) {
+                            tfm::format(std::cout, "Iteration %d: Generated %s blocks\n", iteration, result.get_str());
+                            iteration++;
+                            
+                            // Small delay to prevent overwhelming the system
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        } else {
+                            tfm::format(std::cerr, "Error in iteration %d: %s\n", iteration, error.get_str());
+                            break;
+                        }
+                    } catch (const std::exception& e) {
+                        tfm::format(std::cerr, "Exception in iteration %d: %s\n", iteration, e.what());
+                        break;
                     }
-                    ParseGetInfoResult(result);
                 }
-
-                ParseResult(result, strPrint);
             } else {
-                ParseError(error, strPrint, nRet);
+                // Perform normal RPC call
+                const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
+                const UniValue reply = ConnectAndCallRPC(rh.get(), method, args, wallet_name);
+
+                // Parse reply
+                UniValue result = reply.find_value("result");
+                const UniValue& error = reply.find_value("error");
+                if (error.isNull()) {
+                    if (gArgs.GetBoolArg("-getinfo", false)) {
+                        if (!wallet_name) {
+                            GetWalletBalances(result); // fetch multiwallet balances and append to result
+                        }
+                        ParseGetInfoResult(result);
+                    }
+
+                    ParseResult(result, strPrint);
+                } else {
+                    ParseError(error, strPrint, nRet);
+                }
             }
         }
     } catch (const std::exception& e) {
