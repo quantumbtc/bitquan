@@ -1300,7 +1300,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         }
                     }
                 } else {
-                    tfm::format(std::cout, "Iteration %d: Generated blocks (result type: %s)\n", iteration, result.getTypeStr());
+                    tfm::format(std::cout, "Iteration %d: Generated blocks (result type: %d)\n", iteration, result.getType());
                 }
                 iteration++;
                 
