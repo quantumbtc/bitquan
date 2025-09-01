@@ -1350,70 +1350,24 @@ static int CommandLineRPC(int argc, char *argv[])
             args.erase(args.begin()); // Remove trailing method name from arguments vector
         }
         if (nRet == 0) {
-            // Check if this is a loop mining request
-            bool is_loop = gArgs.GetBoolArg("-generate", false) && !args.empty() && args.at(0) == "loop";
-            
-            if (is_loop) {
-                // For loop mining, continuously generate blocks
-                const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
-                std::string address = getnewaddress.find_value("result").get_str();
-                
-                tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
-                tfm::format(std::cout, "Press Ctrl+C to stop mining\n");
-                
-                int iteration = 1;
-                while (true) {
-                    try {
-                        // Prepare arguments for this iteration
-                        std::vector<std::string> loop_args = args;
-                        if (loop_args.size() > 1) {
-                            loop_args[0] = loop_args[1]; // Use second argument as nblocks
-                            loop_args.erase(loop_args.begin() + 1);
-                        }
-                        loop_args.emplace(loop_args.begin() + 1, address);
-                        
-                        // Call generatetoaddress
-                        const UniValue reply = ConnectAndCallRPC(rh.get(), "generatetoaddress", loop_args, wallet_name);
-                        
-                        // Parse reply
-                        UniValue result = reply.find_value("result");
-                        const UniValue& error = reply.find_value("error");
-                        
-                        if (error.isNull()) {
-                            tfm::format(std::cout, "Iteration %d: Generated %s blocks\n", iteration, result.get_str());
-                            iteration++;
-                            
-                            // Small delay to prevent overwhelming the system
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        } else {
-                            tfm::format(std::cerr, "Error in iteration %d: %s\n", iteration, error.get_str());
-                            break;
-                        }
-                    } catch (const std::exception& e) {
-                        tfm::format(std::cerr, "Exception in iteration %d: %s\n", iteration, e.what());
-                        break;
+            // Perform normal RPC call
+            const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
+            const UniValue reply = ConnectAndCallRPC(rh.get(), method, args, wallet_name);
+
+            // Parse reply
+            UniValue result = reply.find_value("result");
+            const UniValue& error = reply.find_value("error");
+            if (error.isNull()) {
+                if (gArgs.GetBoolArg("-getinfo", false)) {
+                    if (!wallet_name) {
+                        GetWalletBalances(result); // fetch multiwallet balances and append to result
                     }
+                    ParseGetInfoResult(result);
                 }
+
+                ParseResult(result, strPrint);
             } else {
-                // Perform normal RPC call
-                const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
-                const UniValue reply = ConnectAndCallRPC(rh.get(), method, args, wallet_name);
-
-                // Parse reply
-                UniValue result = reply.find_value("result");
-                const UniValue& error = reply.find_value("error");
-                if (error.isNull()) {
-                    if (gArgs.GetBoolArg("-getinfo", false)) {
-                        if (!wallet_name) {
-                            GetWalletBalances(result); // fetch multiwallet balances and append to result
-                        }
-                        ParseGetInfoResult(result);
-                    }
-
-                    ParseResult(result, strPrint);
-                } else {
-                    ParseError(error, strPrint, nRet);
-                }
+                ParseError(error, strPrint, nRet);
             }
         }
     } catch (const std::exception& e) {
