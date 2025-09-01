@@ -1287,7 +1287,21 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
             const UniValue& error = reply.find_value("error");
             
             if (error.isNull()) {
-                tfm::format(std::cout, "Iteration %d: Generated %s blocks\n", iteration, result.get_str());
+                // Handle the result properly - it's an array of block hashes
+                if (result.isArray()) {
+                    int blocks_generated = result.size();
+                    tfm::format(std::cout, "Iteration %d: Generated %d blocks\n", iteration, blocks_generated);
+                    
+                    // Print the first few block hashes for verification
+                    if (blocks_generated > 0) {
+                        tfm::format(std::cout, "  First block: %s\n", result[0].get_str());
+                        if (blocks_generated > 1) {
+                            tfm::format(std::cout, "  Last block: %s\n", result[blocks_generated-1].get_str());
+                        }
+                    }
+                } else {
+                    tfm::format(std::cout, "Iteration %d: Generated blocks (result type: %s)\n", iteration, result.getTypeStr());
+                }
                 iteration++;
                 
                 // Small delay to prevent overwhelming the system
