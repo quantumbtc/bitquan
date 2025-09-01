@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -779,29 +780,16 @@ class GenerateLoopRequestHandler : public BaseRequestHandler
 public:
     UniValue PrepareRequest(const std::string& method, const std::vector<std::string>& args) override
     {
-        address_str = args.at(1);
-        nblocks_per_iteration = std::stoi(args.at(0));
-        maxtries = args.size() > 2 ? std::stoi(args.at(2)) : 1000000;
-        
+        // This class is no longer used for loop mining
+        // Loop mining is now handled directly in CommandLineRPC
         UniValue params{RPCConvertValues("generatetoaddress", args)};
         return JSONRPCRequestObj("generatetoaddress", params, 1);
     }
 
     UniValue ProcessReply(const UniValue &reply) override
     {
-        UniValue result(UniValue::VOBJ);
-        result.pushKV("address", address_str);
-        result.pushKV("blocks", reply.get_obj()["result"]);
-        result.pushKV("iteration_blocks", nblocks_per_iteration);
-        result.pushKV("max_tries", maxtries);
-        result.pushKV("status", "continuing");
-        return JSONRPCReplyObj(std::move(result), NullUniValue, /*id=*/1, JSONRPCVersion::V2);
+        return reply.get_obj();
     }
-
-protected:
-    std::string address_str;
-    int nblocks_per_iteration;
-    int maxtries;
 };
 
 /** Process default single requests */
@@ -1260,6 +1248,62 @@ static void SetGenerateToAddressArgs(const std::string& address, std::vector<std
     args.emplace(args.begin() + 1, address);
 }
 
+static void StartLoopMining(const std::string& address, const std::vector<std::string>& args)
+{
+    // Parse arguments for loop mining
+    int nblocks_per_iteration = 1;
+    int maxtries = 1000000;
+    
+    if (args.size() > 1) {
+        nblocks_per_iteration = std::stoi(args.at(1));
+    }
+    if (args.size() > 2) {
+        maxtries = std::stoi(args.at(2));
+    }
+    
+    tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
+    tfm::format(std::cout, "Blocks per iteration: %d, Max tries: %d\n", nblocks_per_iteration, maxtries);
+    tfm::format(std::cout, "Press Ctrl+C to stop mining\n");
+    
+    int iteration = 1;
+    while (true) {
+        try {
+            // Prepare arguments for this iteration
+            std::vector<std::string> loop_args;
+            loop_args.push_back(std::to_string(nblocks_per_iteration));
+            loop_args.push_back(address);
+            loop_args.push_back(std::to_string(maxtries));
+            
+            // Call generatetoaddress directly
+            const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
+            
+            // Create a temporary handler for this call
+            GenerateToAddressRequestHandler temp_handler;
+            const UniValue reply = ConnectAndCallRPC(&temp_handler, "generatetoaddress", loop_args, wallet_name);
+            
+            // Parse reply
+            UniValue result = reply.find_value("result");
+            const UniValue& error = reply.find_value("error");
+            
+            if (error.isNull()) {
+                tfm::format(std::cout, "Iteration %d: Generated %s blocks\n", iteration, result.get_str());
+                iteration++;
+                
+                // Small delay to prevent overwhelming the system
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            } else {
+                tfm::format(std::cerr, "Error in iteration %d: %s\n", iteration, error.get_str());
+                // Continue mining even if there's an error
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            }
+        } catch (const std::exception& e) {
+            tfm::format(std::cerr, "Exception in iteration %d: %s\n", iteration, e.what());
+            // Continue mining even if there's an exception
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+    }
+}
+
 static int CommandLineRPC(int argc, char *argv[])
 {
     std::string strPrint;
@@ -1336,8 +1380,9 @@ static int CommandLineRPC(int argc, char *argv[])
                 bool is_loop = !args.empty() && args.at(0) == "loop";
                 
                 if (is_loop) {
-                    // For loop mining, we need to handle it differently
-                    rh.reset(new GenerateLoopRequestHandler());
+                    // For loop mining, handle it directly here
+                    StartLoopMining(address, args);
+                    return 0; // Exit after starting loop mining
                 } else {
                     rh.reset(new GenerateToAddressRequestHandler());
                 }
