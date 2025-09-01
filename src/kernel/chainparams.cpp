@@ -125,7 +125,7 @@ public:
         pchMessageStart[1] = 0xbe;
         pchMessageStart[2] = 0xb4;
         pchMessageStart[3] = 0xd9;
-        nDefaultPort = 18333;
+        nDefaultPort = 51997;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 720;
         m_assumed_chain_state_size = 14;
@@ -211,7 +211,7 @@ public:
         pchMessageStart[1] = 0x11;
         pchMessageStart[2] = 0x09;
         pchMessageStart[3] = 0x07;
-        nDefaultPort = 18333;
+        nDefaultPort = 51998;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 200;
         m_assumed_chain_state_size = 19;
@@ -294,7 +294,7 @@ public:
         pchMessageStart[1] = 0x16;
         pchMessageStart[2] = 0x3f;
         pchMessageStart[3] = 0x28;
-        nDefaultPort = 48333;
+        nDefaultPort = 51999;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 11;
         m_assumed_chain_state_size = 1;
@@ -425,7 +425,7 @@ public:
         uint256 hash = h.GetHash();
         std::copy_n(hash.begin(), 4, pchMessageStart.begin());
 
-        nDefaultPort = 38333;
+        nDefaultPort = 52000;
         nPruneAfterHeight = 1000;
 
         genesis = CreateGenesisBlock(1756526185, 1064202, 0x1e0ffff0, 1, 50 * COIN);
@@ -497,7 +497,7 @@ public:
         pchMessageStart[1] = 0xbf;
         pchMessageStart[2] = 0xb5;
         pchMessageStart[3] = 0xda;
-        nDefaultPort = 18444;
+        nDefaultPort = 52001;
         nPruneAfterHeight = opts.fastprune ? 100 : 1000;
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
