@@ -1251,6 +1251,7 @@ static void SetGenerateToAddressArgs(const std::string& address, std::vector<std
 static void StartLoopMining(const std::string& address, const std::vector<std::string>& args)
 {
     // Parse arguments for loop mining
+    // args[0] = "loop", args[1] = nblocks, args[2] = maxtries
     int nblocks_per_iteration = 1;
     int maxtries = 1000000;
     
@@ -1277,8 +1278,8 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
             // Call generatetoaddress directly
             const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
             
-            // Create a temporary handler for this call
-            GenerateToAddressRequestHandler temp_handler;
+            // Create a simple handler for this call
+            DefaultRequestHandler temp_handler;
             const UniValue reply = ConnectAndCallRPC(&temp_handler, "generatetoaddress", loop_args, wallet_name);
             
             // Parse reply
@@ -1374,9 +1375,8 @@ static int CommandLineRPC(int argc, char *argv[])
             const UniValue& error{getnewaddress.find_value("error")};
             if (error.isNull()) {
                 std::string address = getnewaddress.find_value("result").get_str();
-                SetGenerateToAddressArgs(address, args);
                 
-                // Check if this is a loop mining request
+                // Check if this is a loop mining request BEFORE calling SetGenerateToAddressArgs
                 bool is_loop = !args.empty() && args.at(0) == "loop";
                 
                 if (is_loop) {
@@ -1384,6 +1384,8 @@ static int CommandLineRPC(int argc, char *argv[])
                     StartLoopMining(address, args);
                     return 0; // Exit after starting loop mining
                 } else {
+                    // For normal mining, set up the arguments
+                    SetGenerateToAddressArgs(address, args);
                     rh.reset(new GenerateToAddressRequestHandler());
                 }
             } else {
