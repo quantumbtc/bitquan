@@ -121,10 +121,12 @@ public:
          * The characters are rarely used upper ASCII, not valid as UTF-8, and produce
          * a large 32-bit integer with any alignment.
          */
-        pchMessageStart[0] = 0xf9;
-        pchMessageStart[1] = 0xbe;
-        pchMessageStart[2] = 0xb4;
-        pchMessageStart[3] = 0xd9;
+         pchMessageStart[0] = 0xfa;
+         pchMessageStart[1] = 0xbf;
+         pchMessageStart[2] = 0xc1;
+         pchMessageStart[3] = 0xdb;
+         // => 0xfabfc1db
+         
         nDefaultPort = 51997;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 720;
@@ -207,10 +209,12 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].period = 2016;
 
 
-        pchMessageStart[0] = 0x0b;
-        pchMessageStart[1] = 0x11;
-        pchMessageStart[2] = 0x09;
-        pchMessageStart[3] = 0x07;
+        pchMessageStart[0] = 0xfb;
+pchMessageStart[1] = 0xce;
+pchMessageStart[2] = 0xb2;
+pchMessageStart[3] = 0xda;
+// => 0xfbceb2da
+
         nDefaultPort = 51998;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 200;
@@ -290,10 +294,12 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].period = 2016;
 
     
-        pchMessageStart[0] = 0x1c;
-        pchMessageStart[1] = 0x16;
-        pchMessageStart[2] = 0x3f;
-        pchMessageStart[3] = 0x28;
+        pchMessageStart[0] = 0xfc;
+pchMessageStart[1] = 0xab;
+pchMessageStart[2] = 0xd3;
+pchMessageStart[3] = 0xca;
+// => 0xfcabd3ca
+
         nDefaultPort = 51999;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 11;
