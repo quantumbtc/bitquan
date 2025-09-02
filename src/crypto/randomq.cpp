@@ -54,7 +54,7 @@ void CRandomQ::Initialize(const uint8_t* seed, size_t seed_len)
     }
 }
 
-CRandomQ& CRandomQ::Write(std::span<const uint8_t> input)
+CRandomQ& CRandomQ::Write(std::span<const unsigned char> input)
 {
     if (input.empty()) return *this;
     
@@ -81,7 +81,7 @@ CRandomQ& CRandomQ::Write(std::span<const uint8_t> input)
     return *this;
 }
 
-void CRandomQ::Finalize(uint8_t hash[OUTPUT_SIZE])
+void CRandomQ::Finalize(unsigned char hash[OUTPUT_SIZE])
 {
     // Mix in the nonce
     state[0] ^= nonce;
@@ -138,7 +138,7 @@ void CRandomQ::RandomQRound()
     }
 }
 
-void CRandomQ::StateToHash(uint8_t hash[OUTPUT_SIZE])
+void CRandomQ::StateToHash(unsigned char hash[OUTPUT_SIZE])
 {
     // Use SHA256 to finalize the RandomQ state
     CSHA256 sha256;

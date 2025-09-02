@@ -7,6 +7,9 @@
 
 #include <cstdint>
 #include <span>
+#include <span.h>
+#include <uint256.h>
+#include <crypto/common.h>
 
 /** A hasher class for RandomQ (Monero's anti-quantum algorithm). */
 class CRandomQ
@@ -27,10 +30,10 @@ public:
     void Initialize(const uint8_t* seed, size_t seed_len);
     
     /** Process input data */
-    CRandomQ& Write(std::span<const uint8_t> input);
+    CRandomQ& Write(std::span<const unsigned char> input);
     
     /** Finalize and get the hash result */
-    void Finalize(uint8_t hash[OUTPUT_SIZE]);
+    void Finalize(unsigned char hash[OUTPUT_SIZE]);
     
     /** Reset the hasher state */
     CRandomQ& Reset();
