@@ -28,6 +28,10 @@
 #include <type_traits>
 #include <iostream>
 #include <iomanip>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <vector>
 
 using namespace util::hex_literals;
 
@@ -81,6 +85,7 @@ static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits
 
 std::atomic<bool> g_found(false);
 std::mutex g_printMutex;
+CBlockHeader g_found_genesis;
 
 void MineThread(CBlockHeader genesis, const Consensus::Params& consensus,
                 uint32_t threadId, uint64_t maxAttemptsPerThread)
@@ -93,16 +98,18 @@ void MineThread(CBlockHeader genesis, const Consensus::Params& consensus,
             maxAttemptsPerThread);
 
         if (mined && RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) {
-            g_found.store(true);
-
-            std::lock_guard<std::mutex> lock(g_printMutex);
-            std::cout << "[Thread " << threadId << "] RandomQ genesis found"
-                      << ": nonce=" << genesis.nNonce
-                      << " hash=" << genesis.GetHash().ToString()
-                      << " merkle=" << genesis.hashMerkleRoot.ToString()
-                      << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
-                      << " time=" << genesis.nTime
-                      << std::endl;
+            if (!g_found.exchange(true)) {
+                g_found_genesis = genesis;
+                
+                std::lock_guard<std::mutex> lock(g_printMutex);
+                std::cout << "[Thread " << threadId << "] RandomQ genesis found"
+                          << ": nonce=" << genesis.nNonce
+                          << " hash=" << genesis.GetHash().ToString()
+                          << " merkle=" << genesis.hashMerkleRoot.ToString()
+                          << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
+                          << " time=" << genesis.nTime
+                          << std::endl;
+            }
             return;
         }
 
@@ -178,9 +185,9 @@ public:
         std::vector<std::thread> threads;
 
         for (int i = 0; i < numThreads; ++i) {
-            CBlockHeader genesis = CreateGenesisBlock(); // 每个线程独立拷贝
-            genesis.nNonce = i * 1000000ULL;             // 避免nonce重叠
-            threads.emplace_back(MineThread, genesis, consensus, i, attemptsPerThread);
+            CBlockHeader thread_genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN); // 每个线程独立拷贝
+            thread_genesis.nNonce = i * 1000000ULL;             // 避免nonce重叠
+            threads.emplace_back(MineThread, thread_genesis, consensus, i, attemptsPerThread);
         }
 
         for (auto& t : threads) {
@@ -188,6 +195,11 @@ public:
         }
 
         std::cout << "Mining finished." << std::endl;
+        
+        // Use the found genesis block if one was found
+        if (g_found.load()) {
+            genesis = g_found_genesis;
+        }
 
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
