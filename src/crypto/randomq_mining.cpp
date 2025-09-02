@@ -8,6 +8,7 @@
 #include <uint256.h>
 #include <arith_uint256.h>
 #include <logging.h>
+#include <streams.h>
 
 namespace RandomQMining {
 
@@ -49,7 +50,7 @@ bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& po
         
         // Check if hash meets target
         if (UintToArith256(hash) <= target) {
-            LogPrint(BCLog::MINING, "RandomQ nonce found: %u after %lu attempts\n", block.nNonce, attempts);
+            LogDebug(BCLog::VALIDATION, "RandomQ nonce found: %u after %lu attempts", block.nNonce, attempts);
             return true;
         }
         
@@ -65,19 +66,21 @@ bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& po
     
     // Restore original nonce if no solution found
     block.nNonce = originalNonce;
-    LogPrint(BCLog::MINING, "RandomQ nonce not found after %lu attempts\n", attempts);
+    LogDebug(BCLog::VALIDATION, "RandomQ nonce not found after %lu attempts", attempts);
     return false;
 }
 
 uint256 CalculateRandomQHash(const CBlockHeader& block)
 {
     CRandomQHash hasher;
-    hasher.Write(MakeUCharSpan(block));
+    std::vector<unsigned char> serialized;
+    VectorWriter(serialized, 0, block);
+    hasher.Write(std::span<const unsigned char>(serialized.data(), serialized.size()));
     hasher.SetRandomQNonce(block.nNonce);
     hasher.SetRandomQRounds(8192);
     
     uint256 result;
-    hasher.Finalize(result.begin());
+    hasher.Finalize(std::span<unsigned char>(result.begin(), result.size()));
     return result;
 }
 
@@ -89,12 +92,14 @@ uint256 CalculateRandomQHashOptimized(const CBlockHeader& block, uint32_t nonce)
     
     // Calculate hash
     CRandomQHash hasher;
-    hasher.Write(MakeUCharSpan(headerCopy));
+    std::vector<unsigned char> serialized;
+    VectorWriter(serialized, 0, headerCopy);
+    hasher.Write(std::span<const unsigned char>(serialized.data(), serialized.size()));
     hasher.SetRandomQNonce(nonce);
     hasher.SetRandomQRounds(8192);
     
     uint256 result;
-    hasher.Finalize(result.begin());
+    hasher.Finalize(std::span<unsigned char>(result.begin(), result.size()));
     return result;
 }
 
