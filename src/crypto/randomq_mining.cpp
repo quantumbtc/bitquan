@@ -55,13 +55,14 @@ bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& po
     // Capture a header template; only nonce changes per attempt
     const CBlockHeader header_template = block;
 
-    auto worker = [&](uint32_t offset, uint32_t step) {
-        // Start nonce for this worker
-        uint32_t nonce = offset;
+    const uint32_t base_nonce = block.nNonce; // respect caller-provided starting nonce
 
-        // Calculate a finish boundary to avoid overflow and keep strides aligned
+    auto worker = [&](uint32_t offset, uint32_t step) {
+        // Start nonce for this worker (stride search)
+        uint32_t nonce = base_nonce + offset;
+        // Calculate a finish boundary aligned to stride, wrapping on overflow
         uint32_t finish = std::numeric_limits<uint32_t>::max() - step;
-        finish = finish - (finish % step) + offset;
+        finish = (finish - ((finish - base_nonce) % step)) + offset;
 
         uint64_t attempts_done = 0;
         while (!found.load(std::memory_order_relaxed) && attempts_done < per_task_attempts && nonce < finish) {
@@ -76,7 +77,7 @@ bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& po
                     }
                     return;
                 }
-                nonce += step;
+                nonce += step; // wrap naturally on uint32 overflow
                 ++attempts_done;
             } while (!found.load(std::memory_order_relaxed) && attempts_done < per_task_attempts && nonce != next);
         }
