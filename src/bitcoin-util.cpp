@@ -13,6 +13,7 @@
 #include <common/system.h>
 #include <compat/compat.h>
 #include <core_io.h>
+#include <crypto/randomq_mining.h>
 #include <streams.h>
 #include <util/exception.h>
 #include <util/strencodings.h>
@@ -99,7 +100,7 @@ static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uin
     while (!found && header.nNonce < finish) {
         const uint32_t next = (finish - header.nNonce < 5000*step) ? finish : header.nNonce + 5000*step;
         do {
-            if (UintToArith256(header.GetHash()) <= target) {
+            if (UintToArith256(RandomQMining::CalculateRandomQHash(header)) <= target) {
                 if (!found.exchange(true)) {
                     proposed_nonce = header.nNonce;
                 }

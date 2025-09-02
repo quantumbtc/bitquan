@@ -25,6 +25,7 @@
 #include <node/warnings.h>
 #include <policy/ephemeral_policy.h>
 #include <pow.h>
+#include <crypto/randomq_mining.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
 #include <rpc/server.h>
@@ -139,7 +140,8 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    // Use RandomQ mining algorithm
+    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !RandomQMining::CheckRandomQProofOfWork(block, block.nBits, chainman.GetConsensus().powLimit) && !chainman.m_interrupt) {
         ++block.nNonce;
         --max_tries;
     }
