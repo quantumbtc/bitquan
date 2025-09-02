@@ -9,6 +9,10 @@
 #include <arith_uint256.h>
 #include <logging.h>
 #include <streams.h>
+#include <thread>
+#include <atomic>
+#include <vector>
+#include <limits>
 
 namespace RandomQMining {
 
@@ -36,37 +40,60 @@ bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& po
     arith_uint256 target;
     bool fNegative, fOverflow;
     target.SetCompact(nBits, &fNegative, &fOverflow);
-    
+
     if (fNegative || target == 0 || fOverflow || target > UintToArith256(powLimit)) {
         return false;
     }
-    
-    uint64_t attempts = 0;
-    uint32_t originalNonce = block.nNonce;
-    
-    while (attempts < maxAttempts) {
-        // Calculate hash with current nonce
-        uint256 hash = CalculateRandomQHashOptimized(block, block.nNonce);
-        
-        // Check if hash meets target
-        if (UintToArith256(hash) <= target) {
-            LogDebug(BCLog::VALIDATION, "RandomQ nonce found: %u after %lu attempts", block.nNonce, attempts);
-            return true;
+
+    // Determine threading parameters
+    const unsigned int n_tasks = std::max(1u, std::thread::hardware_concurrency());
+    const uint64_t per_task_attempts = (maxAttempts == 0) ? std::numeric_limits<uint64_t>::max() : (maxAttempts + n_tasks - 1) / n_tasks;
+
+    std::atomic<bool> found{false};
+    std::atomic<uint32_t> proposed_nonce{0};
+
+    // Capture a header template; only nonce changes per attempt
+    const CBlockHeader header_template = block;
+
+    auto worker = [&](uint32_t offset, uint32_t step) {
+        // Start nonce for this worker
+        uint32_t nonce = offset;
+
+        // Calculate a finish boundary to avoid overflow and keep strides aligned
+        uint32_t finish = std::numeric_limits<uint32_t>::max() - step;
+        finish = finish - (finish % step) + offset;
+
+        uint64_t attempts_done = 0;
+        while (!found.load(std::memory_order_relaxed) && attempts_done < per_task_attempts && nonce < finish) {
+            // Batch in chunks to minimize atomic checks
+            const uint32_t next = (finish - nonce < 5000 * step) ? finish : nonce + 5000 * step;
+            do {
+                // Compute hash with current nonce
+                uint256 hash = CalculateRandomQHashOptimized(header_template, nonce);
+                if (UintToArith256(hash) <= target) {
+                    if (!found.exchange(true)) {
+                        proposed_nonce.store(nonce, std::memory_order_relaxed);
+                    }
+                    return;
+                }
+                nonce += step;
+                ++attempts_done;
+            } while (!found.load(std::memory_order_relaxed) && attempts_done < per_task_attempts && nonce != next);
         }
-        
-        // Try next nonce
-        block.nNonce++;
-        attempts++;
-        
-        // Reset nonce if we've exhausted 32-bit range
-        if (block.nNonce == 0) {
-            block.nNonce = 1;
-        }
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(n_tasks);
+    for (unsigned int i = 0; i < n_tasks; ++i) {
+        threads.emplace_back(worker, i, n_tasks);
     }
-    
-    // Restore original nonce if no solution found
-    block.nNonce = originalNonce;
-    LogDebug(BCLog::VALIDATION, "RandomQ nonce not found after %lu attempts", attempts);
+    for (auto& t : threads) t.join();
+
+    if (found.load()) {
+        block.nNonce = proposed_nonce.load();
+        return true;
+    }
+
     return false;
 }
 
