@@ -28,6 +28,9 @@
 #include <type_traits>
 #include <iostream>
 #include <iomanip>
+#include <thread>
+#include <atomic>
+#include <vector>
 
 using namespace util::hex_literals;
 
@@ -139,19 +142,48 @@ public:
         genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
 
 
-        while (true) {
-            const bool mined = RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000000000ULL);
-            std::cout << (mined ? "RandomQ genesis found" : "RandomQ mining exhausted")
-                      << ": nonce=" << genesis.nNonce
-                      << " hash=" << genesis.GetHash().ToString()
-                      << " merkle=" << genesis.hashMerkleRoot.ToString()
-                      << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
-                      << " time=" << genesis.nTime
-                      << std::endl;
-            if (RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) break;
-            genesis.nTime = GetTime();
-            genesis.nNonce++;
+        // Multi-threaded genesis mining
+        const int num_threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+        std::atomic<bool> found{false};
+        std::atomic<uint32_t> found_nonce{0};
+        std::atomic<uint32_t> current_nonce{0};
+        
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        
+        for (int i = 0; i < num_threads; ++i) {
+            threads.emplace_back([&, i]() {
+                CBlockHeader thread_genesis = genesis;
+                uint32_t thread_nonce = current_nonce.fetch_add(1);
+                
+                while (!found.load()) {
+                    thread_genesis.nNonce = thread_nonce;
+                    thread_genesis.nTime = GetTime();
+                    
+                    if (RandomQMining::CheckRandomQProofOfWork(thread_genesis, thread_genesis.nBits, consensus.powLimit)) {
+                        if (!found.exchange(true)) {
+                            found_nonce.store(thread_nonce);
+                            std::cout << "RandomQ genesis found: nonce=" << thread_nonce
+                                      << " hash=" << thread_genesis.GetHash().ToString()
+                                      << " merkle=" << thread_genesis.hashMerkleRoot.ToString()
+                                      << " bits=" << std::hex << std::setw(8) << std::setfill('0') << thread_genesis.nBits << std::dec
+                                      << " time=" << thread_genesis.nTime
+                                      << std::endl;
+                        }
+                        return;
+                    }
+                    
+                    thread_nonce = current_nonce.fetch_add(1);
+                }
+            });
         }
+        
+        for (auto& t : threads) {
+            t.join();
+        }
+        
+        genesis.nNonce = found_nonce.load();
+        genesis.nTime = GetTime();
 
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
