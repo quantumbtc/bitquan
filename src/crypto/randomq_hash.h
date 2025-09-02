@@ -25,13 +25,13 @@ public:
         assert(output.size() == OUTPUT_SIZE);
         
         // First SHA256
-        uint8_t first_hash[CSHA256::OUTPUT_SIZE];
+        unsigned char first_hash[CSHA256::OUTPUT_SIZE];
         sha256_first.Finalize(first_hash);
         
         // RandomQ
-        uint8_t randomq_hash[CRandomQ::OUTPUT_SIZE];
+        unsigned char randomq_hash[CRandomQ::OUTPUT_SIZE];
         randomq.Reset();
-        randomq.Write(first_hash, CSHA256::OUTPUT_SIZE);
+        randomq.Write(std::span<const unsigned char>(first_hash, CSHA256::OUTPUT_SIZE));
         randomq.Finalize(randomq_hash);
         
         // Second SHA256
