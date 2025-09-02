@@ -149,6 +149,8 @@ public:
                       << " time=" << genesis.nTime
                       << std::endl;
             if (RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) break;
+            genesis.nTime = GetTime();
+            genesis.nNonce++;
         }
 
         consensus.hashGenesisBlock = genesis.GetHash();
