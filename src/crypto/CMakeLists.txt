@@ -13,7 +13,6 @@ add_library(bitcoin_crypto STATIC EXCLUDE_FROM_ALL
   muhash.cpp
   poly1305.cpp
   randomq.cpp
-  randomq_hash.cpp
   randomq_mining.cpp
   ripemd160.cpp
   sha1.cpp
