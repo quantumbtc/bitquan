@@ -148,7 +148,7 @@ public:
                       << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
                       << " time=" << genesis.nTime
                       << std::endl;
-            if (CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) break;
+            if (RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) break;
         }
 
         consensus.hashGenesisBlock = genesis.GetHash();
