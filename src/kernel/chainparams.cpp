@@ -138,6 +138,7 @@ public:
         // Create genesis with nonce 0, then find a valid nonce using RandomQ
         genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
 
+        while (true) {
         RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000ULL);
         std::cout << "RandomQ genesis found: nonce=" << genesis.nNonce
                   << " hash=" << genesis.GetHash().ToString()
@@ -145,7 +146,7 @@ public:
                   << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
                   << " time=" << genesis.nTime
                   << std::endl;
-
+        }
 
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
