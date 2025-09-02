@@ -26,6 +26,8 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <iostream>
+#include <iomanip>
 
 using namespace util::hex_literals;
 
@@ -136,11 +138,11 @@ public:
         // Create genesis with nonce 0, then find a valid nonce using RandomQ
         genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
 
-       RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000ULL)
+        RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000ULL);
         std::cout << "RandomQ genesis found: nonce=" << genesis.nNonce
                   << " hash=" << genesis.GetHash().ToString()
                   << " merkle=" << genesis.hashMerkleRoot.ToString()
-                  << " bits=" << strprintf("%08x", genesis.nBits)
+                  << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
                   << " time=" << genesis.nTime
                   << std::endl;
 
