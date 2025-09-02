@@ -18,10 +18,13 @@ def simulate_randomq(input_data, nonce=0, rounds=8192):
     """
     # 第一步：SHA256
     first_hash = sha256(input_data)
+
+    # 将32字节扩展为64字节以便拆成8个uint64
+    first_hash_64 = first_hash + first_hash  # 32 + 32 = 64 bytes
     
     # 第二步：模拟RandomQ（简化版本）
     # 使用一个简单的状态转换函数
-    state = list(struct.unpack('<8Q', first_hash))  # 64字节转换为8个64位整数
+    state = list(struct.unpack('<8Q', first_hash_64))  # 64字节转换为8个64位整数
     
     # 添加nonce
     state[0] ^= nonce
@@ -34,7 +37,7 @@ def simulate_randomq(input_data, nonce=0, rounds=8192):
             # 旋转和混合
             rotated = ((state[i] << 13) | (state[i] >> 51)) & 0xFFFFFFFFFFFFFFFF
             next_val = state[(i + 1) % 8]
-            mixed = rotated ^ next_val ^ (state[i] + next_val)
+            mixed = (rotated ^ next_val ^ (state[i] + next_val)) & 0xFFFFFFFFFFFFFFFF
             new_state.append(mixed)
         state = new_state
     

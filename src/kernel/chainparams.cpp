@@ -10,6 +10,7 @@
 #include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <hash.h>
+#include <crypto/randomq_mining.h>
 #include <kernel/messagestartchars.h>
 #include <logging.h>
 #include <primitives/block.h>
@@ -132,7 +133,24 @@ public:
         m_assumed_blockchain_size = 720;
         m_assumed_chain_state_size = 14;
 
-        genesis = CreateGenesisBlock(1756526185, 1064202, 0x1e0ffff0, 1, 50 * COIN);
+        // Create genesis with nonce 0, then find a valid nonce using RandomQ
+        genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
+
+         while (true) {
+             if (RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000000000ULL))
+             {
+                 LogInfo("RandomQ genesis found: nonce=%u hash=%s merkle=%s bits=%08x time=%u",
+                         genesis.nNonce,
+                         genesis.GetHash().ToString(),
+                         genesis.hashMerkleRoot.ToString(),
+                         genesis.nBits,
+                         genesis.nTime);
+                 break;
+             }
+         }
+
+
+
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
         assert(genesis.hashMerkleRoot == uint256{"b0e14069031ce67080e53fe3d2cdbc23d0949fd85efac43e67ffdcf07d66d541"});
