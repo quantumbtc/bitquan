@@ -138,14 +138,18 @@ public:
         // Create genesis with nonce 0, then find a valid nonce using RandomQ
         genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
 
-        const bool mined = RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000000000ULL);
-        std::cout << (mined ? "RandomQ genesis found" : "RandomQ mining exhausted")
-                  << ": nonce=" << genesis.nNonce
-                  << " hash=" << genesis.GetHash().ToString()
-                  << " merkle=" << genesis.hashMerkleRoot.ToString()
-                  << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
-                  << " time=" << genesis.nTime
-                  << std::endl;
+
+        while (true) {
+            const bool mined = RandomQMining::FindRandomQNonce(genesis, genesis.nBits, consensus.powLimit, /*maxAttempts=*/1000000000ULL);
+            std::cout << (mined ? "RandomQ genesis found" : "RandomQ mining exhausted")
+                      << ": nonce=" << genesis.nNonce
+                      << " hash=" << genesis.GetHash().ToString()
+                      << " merkle=" << genesis.hashMerkleRoot.ToString()
+                      << " bits=" << std::hex << std::setw(8) << std::setfill('0') << genesis.nBits << std::dec
+                      << " time=" << genesis.nTime
+                      << std::endl;
+            if (CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) break;
+        }
 
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
