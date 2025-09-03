@@ -21,6 +21,7 @@ class RPCGenerateTest(BitcoinTestFramework):
     def run_test(self):
         self.test_generatetoaddress()
         self.test_generate()
+        self.test_continuous_mining()
         self.test_generateblock()
 
     def test_generatetoaddress(self):
@@ -118,21 +119,62 @@ class RPCGenerateTest(BitcoinTestFramework):
         assert_raises_rpc_error(-5, 'Cannot derive script without private keys', self.generateblock, node, child_descriptor, [])
 
     def test_generate(self):
-        message = (
-            "generate\n\n"
-            "has been replaced by the -generate "
-            "cli option. Refer to -help for more information.\n"
-        )
+        self.log.info("Test rpc generate with advanced multi-threaded mining")
+        
+        # Test generate with valid address
+        address = 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ'
+        result = self.nodes[0].generate(1, address)
+        assert_equal(result['continuous'], False)
+        assert_equal(len(result['blocks']), 1)
+        assert_equal(len(result['blocks'][0]), 64)  # Block hash should be 64 characters
+        
+        # Test generate with multiple blocks
+        result = self.nodes[0].generate(3, address)
+        assert_equal(result['continuous'], False)
+        assert_equal(len(result['blocks']), 3)
+        
+        # Test generate with invalid address
+        assert_raises_rpc_error(-5, "Invalid address", self.nodes[0].generate, 1, '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')
+        
+        # Test generate help
+        help_text = self.nodes[0].help("generate")
+        assert "advanced multi-threaded RandomQ mining" in help_text
 
-        if not self.options.usecli:
-            self.log.info("Test rpc generate raises with message to use cli option")
-            assert_raises_rpc_error(-32601, message, self.nodes[0]._rpc.generate)
-
-            self.log.info("Test rpc generate help prints message to use cli option")
-            assert_equal(message, self.nodes[0].help("generate"))
-
-        self.log.info("Test rpc generate is a hidden command not discoverable in general help")
-        assert message not in self.nodes[0].help()
+    def test_continuous_mining(self):
+        self.log.info("Test continuous mining functionality")
+        
+        address = 'mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ'
+        
+        # Test starting continuous mining
+        result = self.nodes[0].generate(0, address)
+        assert_equal(result['continuous'], True)
+        assert_equal(len(result['blocks']), 0)
+        assert "Continuous mining started" in result['message']
+        
+        # Test getting mining status
+        status = self.nodes[0].getminingstatus()
+        assert_equal(status['continuous_mining'], True)
+        assert_equal(status['mining_address'], address)
+        assert 'blocks_mined' in status
+        
+        # Wait a bit for mining to potentially find a block
+        import time
+        time.sleep(2)
+        
+        # Test stopping continuous mining
+        stop_result = self.nodes[0].stopmining()
+        assert_equal(stop_result['stopped'], True)
+        assert "stopped successfully" in stop_result['message']
+        assert 'blocks_mined' in stop_result
+        
+        # Test getting status after stopping
+        status = self.nodes[0].getminingstatus()
+        assert_equal(status['continuous_mining'], False)
+        
+        # Test stopping when not mining
+        stop_result = self.nodes[0].stopmining()
+        assert_equal(stop_result['stopped'], False)
+        assert "No continuous mining was running" in stop_result['message']
 
 
 if __name__ == "__main__":

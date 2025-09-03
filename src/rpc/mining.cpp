@@ -28,6 +28,11 @@
 #include <crypto/randomq_mining.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
+#include <thread>
+#include <chrono>
+#include <atomic>
+#include <mutex>
+#include <iomanip>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
@@ -135,32 +140,256 @@ static RPCHelpMan getnetworkhashps()
     };
 }
 
-static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
+// 高级挖矿相关全局变量
+std::atomic<bool> g_mining_found(false);
+std::mutex g_mining_print_mutex;
+CBlock g_found_block;
+std::atomic<uint64_t> g_mining_total_hashes(0);
+std::atomic<uint64_t> g_mining_start_time(0);
+
+// 连续挖矿控制变量
+std::atomic<bool> g_continuous_mining(false);
+std::atomic<bool> g_stop_mining(false);
+std::thread g_continuous_mining_thread;
+std::mutex g_continuous_mining_mutex;
+std::string g_mining_address;
+std::atomic<uint64_t> g_blocks_mined(0);
+
+// Hash率报告线程函数
+void MiningHashRateReporter() {
+    uint64_t lastTotalHashes = 0;
+    uint64_t lastReportTime = g_mining_start_time.load();
+    
+    while (!g_mining_found.load()) {
+        std::this_thread::sleep_for(std::chrono::seconds(5)); // 每5秒报告一次
+        
+        uint64_t currentTime = GetTime();
+        uint64_t currentTotalHashes = g_mining_total_hashes.load();
+        
+        if (currentTime > lastReportTime && currentTotalHashes > lastTotalHashes) {
+            uint64_t timeDiff = currentTime - lastReportTime;
+            uint64_t hashDiff = currentTotalHashes - lastTotalHashes;
+            double hashrate = (double)hashDiff / timeDiff;
+            double totalHashrate = (double)currentTotalHashes / (currentTime - g_mining_start_time.load());
+            
+            std::lock_guard<std::mutex> lock(g_mining_print_mutex);
+            std::cout << "[Mining HashRate] Current: " << std::fixed << std::setprecision(2) << hashrate 
+                      << " H/s | Average: " << std::fixed << std::setprecision(2) << totalHashrate 
+                      << " H/s | Total: " << currentTotalHashes << " hashes" << std::endl;
+            
+            lastTotalHashes = currentTotalHashes;
+            lastReportTime = currentTime;
+        }
+    }
+}
+
+// 挖矿线程函数
+void MiningThread(CBlock block, const Consensus::Params& consensus, uint32_t threadId) {
+    while (!g_mining_found.load()) {
+        bool mined = RandomQMining::FindRandomQNonce(
+            block,
+            block.nBits,
+            consensus.powLimit);
+
+        // 统计hash次数
+        g_mining_total_hashes.fetch_add(1);
+
+        if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, consensus.powLimit)) {
+            if (!g_mining_found.exchange(true)) {
+                g_found_block = block;
+                
+                std::lock_guard<std::mutex> lock(g_mining_print_mutex);
+                std::cout << "[Mining Thread " << threadId << "] Block found"
+                          << ": nonce=" << block.nNonce
+                          << " hash=" << block.GetHash().ToString()
+                          << " merkle=" << block.hashMerkleRoot.ToString()
+                          << " bits=" << std::hex << std::setw(8) << std::setfill('0') << block.nBits << std::dec
+                          << " time=" << block.nTime
+                          << std::endl;
+            }
+            return;
+        }
+
+        // 如果没找到，继续尝试递增 nonce
+        block.nNonce += 1;
+        block.nTime = GetTime();
+    }
+}
+
+// 高级多线程挖矿函数
+static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    // Use RandomQ mining algorithm
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !RandomQMining::CheckRandomQProofOfWork(block, block.nBits, chainman.GetConsensus().powLimit) && !chainman.m_interrupt) {
-        ++block.nNonce;
-        --max_tries;
+    // 初始化挖矿状态
+    g_mining_start_time.store(GetTime());
+    g_mining_total_hashes.store(0);
+    g_mining_found.store(false);
+
+    const int numThreads = std::thread::hardware_concurrency();
+    std::cout << "Starting advanced RandomQ mining with " << numThreads << " threads..." << std::endl;
+    std::cout << "Target: " << std::hex << std::setw(8) << std::setfill('0') << block.nBits << std::dec << std::endl;
+
+    std::vector<std::thread> threads;
+
+    // 启动hash率报告线程
+    std::thread reporterThread(MiningHashRateReporter);
+
+    for (int i = 0; i < numThreads; ++i) {
+        CBlock thread_block = block; // 每个线程独立拷贝
+        thread_block.nNonce = i * 1000000ULL; // 避免nonce重叠
+        threads.emplace_back(MiningThread, thread_block, chainman.GetConsensus(), i);
     }
-    if (max_tries == 0 || chainman.m_interrupt) {
-        return false;
+
+    for (auto& t : threads) {
+        if (t.joinable()) t.join();
     }
-    if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
+
+    // 等待报告线程结束
+    if (reporterThread.joinable()) {
+        reporterThread.join();
+    }
+
+    // 显示最终统计信息
+    uint64_t totalTime = GetTime() - g_mining_start_time.load();
+    double finalHashrate = (double)g_mining_total_hashes.load() / totalTime;
+    
+    std::cout << "Mining finished." << std::endl;
+    std::cout << "Final Statistics:" << std::endl;
+    std::cout << "  Total hashes: " << g_mining_total_hashes.load() << std::endl;
+    std::cout << "  Total time: " << totalTime << " seconds" << std::endl;
+    std::cout << "  Average hash rate: " << std::fixed << std::setprecision(2) << finalHashrate << " H/s" << std::endl;
+
+    // 使用找到的区块
+    if (g_mining_found.load()) {
+        block = g_found_block;
+        block_out = std::make_shared<const CBlock>(std::move(block));
+
+        if (!process_new_block) return true;
+
+        if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+        }
+
         return true;
     }
 
-    block_out = std::make_shared<const CBlock>(std::move(block));
+    return false;
+}
 
-    if (!process_new_block) return true;
-
-    if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+// 连续挖矿线程函数
+void ContinuousMiningWorker(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script) {
+    std::cout << "Starting continuous mining to address..." << std::endl;
+    g_blocks_mined.store(0);
+    
+    while (g_continuous_mining.load() && !g_stop_mining.load()) {
+        try {
+            // 创建新区块模板
+            std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ 
+                .coinbase_output_script = coinbase_output_script 
+            }));
+            
+            if (!block_template) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            
+            CBlock block = block_template->getBlock();
+            std::shared_ptr<const CBlock> block_out;
+            uint64_t max_tries = DEFAULT_MAX_TRIES;
+            
+            // 使用高级挖矿算法挖矿
+            if (AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, true)) {
+                g_blocks_mined.fetch_add(1);
+                uint64_t total_blocks = g_blocks_mined.load();
+                
+                std::lock_guard<std::mutex> lock(g_mining_print_mutex);
+                std::cout << "[Continuous Mining] Block #" << total_blocks 
+                          << " mined: " << block_out->GetHash().ToString() << std::endl;
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        } catch (const std::exception& e) {
+            std::lock_guard<std::mutex> lock(g_mining_print_mutex);
+            std::cout << "[Continuous Mining] Error: " << e.what() << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
     }
+    
+    std::lock_guard<std::mutex> lock(g_mining_print_mutex);
+    std::cout << "Continuous mining stopped. Total blocks mined: " << g_blocks_mined.load() << std::endl;
+}
 
+// 启动连续挖矿
+bool StartContinuousMining(ChainstateManager& chainman, Mining& miner, const std::string& address) {
+    std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
+    
+    if (g_continuous_mining.load()) {
+        return false; // 已经在挖矿
+    }
+    
+    // 解析地址
+    CScript coinbase_output_script;
+    std::string error;
+    if (!getScriptFromAddress(address, coinbase_output_script, error)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
+    }
+    
+    g_mining_address = address;
+    g_continuous_mining.store(true);
+    g_stop_mining.store(false);
+    
+    // 启动连续挖矿线程
+    g_continuous_mining_thread = std::thread(ContinuousMiningWorker, 
+                                            std::ref(chainman), 
+                                            std::ref(miner), 
+                                            coinbase_output_script);
+    
     return true;
+}
+
+// 停止连续挖矿
+bool StopContinuousMining() {
+    std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
+    
+    if (!g_continuous_mining.load()) {
+        return false; // 没有在挖矿
+    }
+    
+    g_stop_mining.store(true);
+    g_continuous_mining.store(false);
+    
+    // 等待挖矿线程结束
+    if (g_continuous_mining_thread.joinable()) {
+        g_continuous_mining_thread.join();
+    }
+    
+    return true;
+}
+
+// 获取挖矿状态
+UniValue GetMiningStatus() {
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("continuous_mining", g_continuous_mining.load());
+    result.pushKV("blocks_mined", (int64_t)g_blocks_mined.load());
+    result.pushKV("mining_address", g_mining_address);
+    
+    if (g_continuous_mining.load()) {
+        uint64_t totalTime = GetTime() - g_mining_start_time.load();
+        double hashrate = totalTime > 0 ? (double)g_mining_total_hashes.load() / totalTime : 0.0;
+        result.pushKV("total_hashes", (int64_t)g_mining_total_hashes.load());
+        result.pushKV("mining_time", (int64_t)totalTime);
+        result.pushKV("hashrate", hashrate);
+    }
+    
+    return result;
+}
+
+static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
+{
+    // 使用高级多线程挖矿算法
+    return AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block);
 }
 
 static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script, int nGenerate, uint64_t nMaxTries)
@@ -258,9 +487,132 @@ static RPCHelpMan generatetodescriptor()
 
 static RPCHelpMan generate()
 {
-    return RPCHelpMan{"generate", "has been replaced by the -generate cli option. Refer to -help for more information.", {}, {}, RPCExamples{""}, [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
-        throw JSONRPCError(RPC_METHOD_NOT_FOUND, self.ToString());
-    }};
+    return RPCHelpMan{"generate", 
+        "Mine blocks to a specified address using advanced multi-threaded RandomQ mining with hash rate statistics. Use 0 for continuous mining until stopped.",
+        {
+            {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks to generate. Use 0 for continuous mining."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated bitcoin to."},
+            {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try (ignored in advanced mining mode)."},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "mining result",
+            {
+                {RPCResult::Type::ARR, "blocks", "hashes of blocks generated (empty for continuous mining)",
+                    {
+                        {RPCResult::Type::STR_HEX, "", "blockhash"},
+                    }
+                },
+                {RPCResult::Type::BOOL, "continuous", "true if continuous mining was started"},
+                {RPCResult::Type::STR, "message", "status message"},
+            }
+        },
+        RPCExamples{
+            "\nGenerate 11 blocks to myaddress\n" + HelpExampleCli("generate", "11 \"myaddress\"") +
+            "\nStart continuous mining to myaddress\n" + HelpExampleCli("generate", "0 \"myaddress\"")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const auto num_blocks{self.Arg<int>("num_blocks")};
+    const auto max_tries{self.Arg<uint64_t>("maxtries")};
+    const auto address{self.Arg<std::string>("address")};
+
+    NodeContext& node = EnsureAnyNodeContext(request.context);
+    Mining& miner = EnsureMining(node);
+    ChainstateManager& chainman = EnsureChainman(node);
+
+    UniValue result(UniValue::VOBJ);
+    
+    if (num_blocks == 0) {
+        // 连续挖矿模式
+        if (StartContinuousMining(chainman, miner, address)) {
+            result.pushKV("blocks", UniValue(UniValue::VARR));
+            result.pushKV("continuous", true);
+            result.pushKV("message", "Continuous mining started to address: " + address);
+            std::cout << "Continuous mining started to address: " << address << std::endl;
+        } else {
+            result.pushKV("blocks", UniValue(UniValue::VARR));
+            result.pushKV("continuous", false);
+            result.pushKV("message", "Continuous mining is already running");
+        }
+    } else {
+        // 指定数量挖矿模式
+        CScript coinbase_output_script;
+        std::string error;
+        if (!getScriptFromAddress(address, coinbase_output_script, error)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
+        }
+
+        std::cout << "Using advanced multi-threaded RandomQ mining for " << num_blocks << " blocks..." << std::endl;
+        UniValue blocks = generateBlocks(chainman, miner, coinbase_output_script, num_blocks, max_tries);
+        
+        result.pushKV("blocks", blocks);
+        result.pushKV("continuous", false);
+        result.pushKV("message", "Generated " + std::to_string(num_blocks) + " blocks");
+    }
+    
+    return result;
+},
+    };
+}
+
+static RPCHelpMan stopmining()
+{
+    return RPCHelpMan{"stopmining", 
+        "Stop continuous mining if it is running.",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "mining stop result",
+            {
+                {RPCResult::Type::BOOL, "stopped", "true if mining was stopped"},
+                {RPCResult::Type::STR, "message", "status message"},
+                {RPCResult::Type::NUM, "blocks_mined", "total blocks mined during the session"},
+            }
+        },
+        RPCExamples{
+            "\nStop continuous mining\n" + HelpExampleCli("stopmining", "")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    UniValue result(UniValue::VOBJ);
+    
+    if (StopContinuousMining()) {
+        uint64_t blocks_mined = g_blocks_mined.load();
+        result.pushKV("stopped", true);
+        result.pushKV("message", "Continuous mining stopped successfully");
+        result.pushKV("blocks_mined", (int64_t)blocks_mined);
+        std::cout << "Continuous mining stopped. Total blocks mined: " << blocks_mined << std::endl;
+    } else {
+        result.pushKV("stopped", false);
+        result.pushKV("message", "No continuous mining was running");
+        result.pushKV("blocks_mined", 0);
+    }
+    
+    return result;
+},
+    };
+}
+
+static RPCHelpMan getminingstatus()
+{
+    return RPCHelpMan{"getminingstatus", 
+        "Get the current mining status and statistics.",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "mining status",
+            {
+                {RPCResult::Type::BOOL, "continuous_mining", "true if continuous mining is active"},
+                {RPCResult::Type::NUM, "blocks_mined", "total blocks mined in current session"},
+                {RPCResult::Type::STR, "mining_address", "address being mined to"},
+                {RPCResult::Type::NUM, "total_hashes", "total hashes computed (if mining)"},
+                {RPCResult::Type::NUM, "mining_time", "time spent mining in seconds (if mining)"},
+                {RPCResult::Type::NUM, "hashrate", "current hash rate in H/s (if mining)"},
+            }
+        },
+        RPCExamples{
+            "\nGet mining status\n" + HelpExampleCli("getminingstatus", "")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    return GetMiningStatus();
+},
+    };
 }
 
 static RPCHelpMan generatetoaddress()
@@ -1146,11 +1498,13 @@ void RegisterMiningRPCCommands(CRPCTable& t)
         {"mining", &getblocktemplate},
         {"mining", &submitblock},
         {"mining", &submitheader},
+        {"mining", &generate},
+        {"mining", &stopmining},
+        {"mining", &getminingstatus},
 
         {"hidden", &generatetoaddress},
         {"hidden", &generatetodescriptor},
         {"hidden", &generateblock},
-        {"hidden", &generate},
     };
     for (const auto& c : commands) {
         t.appendCommand(c.name, &c);
