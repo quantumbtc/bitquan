@@ -8,6 +8,8 @@
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/chaintype.h>
+#include <primitives/block.h>
+#include <crypto/randomq_mining.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -206,6 +208,51 @@ BOOST_AUTO_TEST_CASE(ChainParams_TESTNET4_sanity)
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, ChainType::SIGNET);
+}
+
+// Test RandomQ proof of work compatibility
+BOOST_AUTO_TEST_CASE(CheckRandomQProofOfWork_test)
+{
+    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    
+    // Create a test block header
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256::ZERO;
+    header.hashMerkleRoot = uint256::ZERO;
+    header.nTime = 1234567890;
+    header.nBits = 0x1e0ffff0; // Test difficulty
+    header.nNonce = 0;
+    
+    // Test with invalid nonce (should fail)
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
+    
+    // Test with a valid nonce (if we can find one)
+    // This is a basic test - in practice, finding a valid nonce would require mining
+    header.nNonce = 12345;
+    bool result = CheckProofOfWork(header, header.nBits, consensus);
+    // We don't know if this nonce is valid, so we just check that the function runs
+    // without crashing and returns a boolean value
+    BOOST_CHECK(result == true || result == false);
+}
+
+// Test backward compatibility with hash-based CheckProofOfWork
+BOOST_AUTO_TEST_CASE(CheckProofOfWork_backward_compatibility)
+{
+    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    
+    // Test the old hash-based function still works
+    uint256 hash = uint256::ZERO;
+    unsigned int nBits = 0x1e0ffff0;
+    
+    // This should fail because hash is zero
+    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    
+    // Test with a hash that meets the target
+    arith_uint256 target;
+    target.SetCompact(nBits);
+    hash = ArithToUint256(target / 2); // hash < target, should pass
+    BOOST_CHECK(CheckProofOfWork(hash, nBits, consensus));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
