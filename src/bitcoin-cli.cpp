@@ -1233,8 +1233,9 @@ static UniValue SimpleRPC(const std::string& method, const std::vector<std::stri
 static void MineLocally(const std::string& address, std::optional<int> nblocks_opt, std::optional<uint64_t> maxtries_opt)
 {
     const uint64_t report_interval_secs = 5;
-    int remaining = nblocks_opt.value_or(1);
-    while (remaining > 0) {
+    const bool continuous = !nblocks_opt.has_value();
+    int remaining = continuous ? 1 : nblocks_opt.value();
+    while (continuous || remaining > 0) {
         const UniValue reply = SimpleRPC("getminingwork", {address});
         const UniValue& error = reply.find_value("error");
         if (!error.isNull()) throw std::runtime_error(error.write());
@@ -1261,27 +1262,47 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         const uint64_t maxtries = maxtries_opt.value_or(DEFAULT_MAX_TRIES);
         uint64_t tries = 0;
         bool found = false;
-        while (tries < maxtries) {
-            bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
-            total_hashes += 1;
-            tries += 1;
-            if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
-            block.nNonce += 1;
-            block.nTime = GetTime();
-            const int64_t now = GetTime();
-            if (now - last_time >= (int64_t)report_interval_secs) {
-                const uint64_t dt = now - last_time;
-                const uint64_t dh = total_hashes - last_hashes;
-                const double cur = dt ? (double)dh / dt : 0.0;
-                const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
-                tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
-                last_time = now;
-                last_hashes = total_hashes;
+        if (continuous) {
+            for (;;) {
+                bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
+                total_hashes += 1;
+                if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
+                block.nNonce += 1;
+                block.nTime = GetTime();
+                const int64_t now = GetTime();
+                if (now - last_time >= (int64_t)report_interval_secs) {
+                    const uint64_t dt = now - last_time;
+                    const uint64_t dh = total_hashes - last_hashes;
+                    const double cur = dt ? (double)dh / dt : 0.0;
+                    const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
+                    tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
+                    last_time = now;
+                    last_hashes = total_hashes;
+                }
             }
-        }
-        if (!found) {
-            tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u\n", maxtries);
-            break;
+        } else {
+            while (tries < maxtries) {
+                bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
+                total_hashes += 1;
+                tries += 1;
+                if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
+                block.nNonce += 1;
+                block.nTime = GetTime();
+                const int64_t now = GetTime();
+                if (now - last_time >= (int64_t)report_interval_secs) {
+                    const uint64_t dt = now - last_time;
+                    const uint64_t dh = total_hashes - last_hashes;
+                    const double cur = dt ? (double)dh / dt : 0.0;
+                    const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
+                    tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
+                    last_time = now;
+                    last_hashes = total_hashes;
+                }
+            }
+            if (!found) {
+                tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u\n", maxtries);
+                break;
+            }
         }
 
         DataStream ser;
@@ -1294,7 +1315,9 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         } else {
             tfm::format(std::cout, "[CLI Mining] Block mined: %s\n", block.GetHash().GetHex());
         }
-        remaining--;
+        if (!continuous) {
+            remaining--;
+        }
     }
 }
 
