@@ -1235,7 +1235,7 @@ static UniValue SimpleRPC(const std::string& method, const std::vector<std::stri
 
 static void MineLocally(const std::string& address, std::optional<int> nblocks_opt, std::optional<uint64_t> maxtries_opt)
 {
-    const uint64_t report_interval_secs = 30;
+    const uint64_t report_interval_secs = 10;
     const bool continuous = !nblocks_opt.has_value();
     int remaining = continuous ? 1 : nblocks_opt.value();
     while (continuous || remaining > 0) {
@@ -1257,6 +1257,17 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
             throw std::runtime_error("Invalid pow_limit hex string: " + pow_limit_hex);
         }
         const uint256 pow_limit = pow_limit_opt.value();
+
+        // Print block header information before mining
+        tfm::format(std::cout, "[CLI Mining] Starting mining on block template:\n");
+        tfm::format(std::cout, "  Hash: %s\n", block.GetHash().GetHex());
+        tfm::format(std::cout, "  Previous Hash: %s\n", block.hashPrevBlock.GetHex());
+        tfm::format(std::cout, "  Merkle Root: %s\n", block.hashMerkleRoot.GetHex());
+        tfm::format(std::cout, "  Time: %u\n", block.nTime);
+        tfm::format(std::cout, "  Nonce: %u\n", block.nNonce);
+        tfm::format(std::cout, "  Bits: %08x\n", block.nBits);
+        tfm::format(std::cout, "  Transactions: %u\n", (unsigned int)block.vtx.size());
+        tfm::format(std::cout, "  Target: %s\n", pow_limit.GetHex());
 
         std::atomic<uint64_t> total_hashes{0};
         const int64_t start_time = GetTime();
@@ -1341,6 +1352,7 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                         total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
                     }
                 } else {
+                    uint64_t tries = 0;
                     while (!stop.load(std::memory_order_relaxed)) {
                         // Inner loop with minimal condition checks - unroll for better performance
                         for (uint64_t j = 0; j < check_interval; ++j) {
@@ -1348,6 +1360,7 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             for (int k = 0; k < 4; ++k) {
                                 bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
                                 local_hashes++;
+                                tries++;
                                 
                                 if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
                                     // Add remaining local hashes
@@ -1411,8 +1424,8 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                         smoothed_rate = smoothing_factor * current_rate + (1.0 - smoothing_factor) * smoothed_rate;
                     }
                     
-                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s\n", 
-                               num_threads, current_rate, smoothed_rate, avg);
+                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | Total: %u\n", 
+                               num_threads, current_rate, smoothed_rate, avg, th);
                 }
                 
                 last_report_time = now;
@@ -1434,6 +1447,16 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         DataStream ser;
         ser << TX_WITH_WITNESS(block);
         const std::string block_hex = HexStr(ser);
+        
+        // Print block header information
+        tfm::format(std::cout, "[CLI Mining] Block found!\n");
+        tfm::format(std::cout, "  Hash: %s\n", block.GetHash().GetHex());
+        tfm::format(std::cout, "  Previous Hash: %s\n", block.hashPrevBlock.GetHex());
+        tfm::format(std::cout, "  Merkle Root: %s\n", block.hashMerkleRoot.GetHex());
+        tfm::format(std::cout, "  Time: %u\n", block.nTime);
+        tfm::format(std::cout, "  Nonce: %u\n", block.nNonce);
+        tfm::format(std::cout, "  Bits: %08x\n", block.nBits);
+        tfm::format(std::cout, "  Transactions: %u\n", (unsigned int)block.vtx.size());
         
         tfm::format(std::cout, "[CLI Mining] Submitting block: %s\n", block.GetHash().GetHex());
         const UniValue sub = SimpleRPC("submitblock", {block_hex});
