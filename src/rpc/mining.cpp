@@ -675,6 +675,9 @@ static RPCHelpMan getminingwork()
     std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script }));
     CHECK_NONFATAL(block_template);
     CBlock block = block_template->getBlock();
+    
+    // Ensure merkle root is calculated correctly
+    block.hashMerkleRoot = BlockMerkleRoot(block);
 
     // Serialize block to hex
     DataStream ss;

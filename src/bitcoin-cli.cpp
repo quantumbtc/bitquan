@@ -31,6 +31,7 @@
 #include <uint256.h>
 #include <crypto/randomq_mining.h>
 #include <cstring>
+#include <consensus/merkle.h>
 #ifdef WIN32
 #include <windows.h>
 #endif
@@ -1317,6 +1318,9 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             tries++;
                             
                             if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                                // Recalculate merkle root before submitting
+                                local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                                
                                 // Add remaining local hashes
                                 if (local_hashes > 0) {
                                     total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
@@ -1355,6 +1359,9 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             tries++;
                             
                             if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                                // Recalculate merkle root before submitting
+                                local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                                
                                 // Add remaining local hashes
                                 if (local_hashes > 0) {
                                     total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
@@ -1415,8 +1422,8 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                         smoothed_rate = smoothing_factor * current_rate + (1.0 - smoothing_factor) * smoothed_rate;
                     }
                     
-                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | Total: %u\n", 
-                               num_threads, current_rate, smoothed_rate, avg, th);
+                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | This Round: %u hashes over %lld s\n", 
+                               num_threads, current_rate, smoothed_rate, avg, dh, (long long)dt);
                 }
                 
                 last_report_time = now;
