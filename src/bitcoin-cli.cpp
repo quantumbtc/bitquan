@@ -1239,8 +1239,11 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         if (!error.isNull()) throw std::runtime_error(error.write());
         const UniValue& res = reply.find_value("result");
         CBlock block;
-        std::vector<unsigned char> data;
-        if (!TryParseHex(res["block"].get_str(), data)) throw std::runtime_error("getminingwork returned invalid hex");
+        std::vector<unsigned char> data_uc = ParseHex(res["block"].get_str());
+        if (data_uc.empty()) throw std::runtime_error("getminingwork returned invalid hex");
+        std::vector<std::byte> data;
+        data.resize(data_uc.size());
+        std::memcpy(data.data(), data_uc.data(), data_uc.size());
         SpanReader{data} >> TX_WITH_WITNESS(block);
         // Parse pow limit from RPC to avoid needing Params() in CLI
         const std::string pow_limit_hex = res["pow_limit"].get_str();
