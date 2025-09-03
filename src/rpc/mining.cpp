@@ -685,6 +685,7 @@ static RPCHelpMan getminingwork()
     obj.pushKV("bits", strprintf("%08x", block.nBits));
     obj.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
     obj.pushKV("height", (int64_t)(WITH_LOCK(cs_main, return chainman.ActiveChain().Height() + 1)));
+    obj.pushKV("pow_limit", chainman.GetParams().GetConsensus().powLimit.GetHex());
     return obj;
 },
     };
