@@ -1424,12 +1424,18 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         DataStream ser;
         ser << TX_WITH_WITNESS(block);
         const std::string block_hex = HexStr(ser);
+        
+        tfm::format(std::cout, "[CLI Mining] Submitting block: %s\n", block.GetHash().GetHex());
         const UniValue sub = SimpleRPC("submitblock", {block_hex});
         const UniValue& suberr = sub.find_value("error");
-        if (!suberr.isNull() && !suberr.isNull()) {
+        const UniValue& result = sub.find_value("result");
+        
+        if (!suberr.isNull()) {
             tfm::format(std::cerr, "[CLI Mining] submitblock error: %s\n", suberr.write());
+        } else if (!result.isNull() && result.get_str() != "null") {
+            tfm::format(std::cout, "[CLI Mining] Block submission result: %s\n", result.get_str());
         } else {
-            tfm::format(std::cout, "[CLI Mining] Block mined: %s\n", block.GetHash().GetHex());
+            tfm::format(std::cout, "[CLI Mining] Block successfully submitted: %s\n", block.GetHash().GetHex());
         }
         if (!continuous) {
             remaining--;
