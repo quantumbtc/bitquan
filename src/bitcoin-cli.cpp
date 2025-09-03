@@ -1287,10 +1287,10 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                 
                 // Local counters to reduce atomic operations
                 uint64_t local_hashes = 0;
-                const uint64_t report_batch = 10000; // Report every 10k hashes to reduce contention
+                const uint64_t report_batch = 1000; // Report every 1k hashes for smoother stats
                 
                 // Optimized mining loop with reduced condition checks
-                const uint64_t check_interval = 10000; // Check stop condition every 10k iterations
+                const uint64_t check_interval = 5000; // Check stop condition every 5k iterations
                 
                 if (!continuous) {
                     uint64_t tries = 0;
@@ -1373,10 +1373,12 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
             });
         }
 
-        // Reporter thread with better synchronization
+        // Reporter thread with better synchronization and smoothing
         std::thread reporter([&]() {
             int64_t last_report_time = start_time;
             uint64_t last_report_hashes = 0;
+            double smoothed_rate = 0.0;
+            const double smoothing_factor = 0.3; // Exponential smoothing factor
             
             while (!stop.load(std::memory_order_relaxed)) {
                 std::this_thread::sleep_for(std::chrono::seconds(report_interval_secs));
@@ -1384,14 +1386,23 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                 const int64_t now = GetTime();
                 const uint64_t th = total_hashes.load(std::memory_order_relaxed);
                 
-                // Calculate rates based on last report, not last update
+                // Calculate rates based on last report
                 const uint64_t dh = th - last_report_hashes;
                 const int64_t dt = now - last_report_time;
                 
                 if (dt > 0) {
-                    const double cur = (double)dh / dt;
+                    const double current_rate = (double)dh / dt;
                     const double avg = (now - start_time) ? (double)th / (now - start_time) : 0.0;
-                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", num_threads, cur, avg, th);
+                    
+                    // Apply exponential smoothing to reduce fluctuations
+                    if (smoothed_rate == 0.0) {
+                        smoothed_rate = current_rate;
+                    } else {
+                        smoothed_rate = smoothing_factor * current_rate + (1.0 - smoothing_factor) * smoothed_rate;
+                    }
+                    
+                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | Total: %u\n", 
+                               num_threads, current_rate, smoothed_rate, avg, th);
                 }
                 
                 last_report_time = now;
