@@ -18,6 +18,11 @@
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <uint256.h>
+#include <thread>
+#include <chrono>
+#include <atomic>
+#include <mutex>
+#include <iomanip>
 #include <util/chaintype.h>
 #include <util/strencodings.h>
 
@@ -87,6 +92,39 @@ std::atomic<bool> g_found(false);
 std::mutex g_printMutex;
 CBlockHeader g_found_genesis;
 
+// Hash率统计相关变量
+std::atomic<uint64_t> g_totalHashes(0);
+std::atomic<uint64_t> g_startTime(0);
+std::mutex g_hashrateMutex;
+
+// Hash率报告线程函数
+void HashRateReporter() {
+    uint64_t lastTotalHashes = 0;
+    uint64_t lastReportTime = g_startTime.load();
+    
+    while (!g_found.load()) {
+        std::this_thread::sleep_for(std::chrono::seconds(5)); // 每5秒报告一次
+        
+        uint64_t currentTime = GetTime();
+        uint64_t currentTotalHashes = g_totalHashes.load();
+        
+        if (currentTime > lastReportTime && currentTotalHashes > lastTotalHashes) {
+            uint64_t timeDiff = currentTime - lastReportTime;
+            uint64_t hashDiff = currentTotalHashes - lastTotalHashes;
+            double hashrate = (double)hashDiff / timeDiff;
+            double totalHashrate = (double)currentTotalHashes / (currentTime - g_startTime.load());
+            
+            std::lock_guard<std::mutex> lock(g_printMutex);
+            std::cout << "[HashRate] Current: " << std::fixed << std::setprecision(2) << hashrate 
+                      << " H/s | Average: " << std::fixed << std::setprecision(2) << totalHashrate 
+                      << " H/s | Total: " << currentTotalHashes << " hashes" << std::endl;
+            
+            lastTotalHashes = currentTotalHashes;
+            lastReportTime = currentTime;
+        }
+    }
+}
+
 void MineThread(CBlockHeader genesis, const Consensus::Params& consensus,
                 uint32_t threadId, uint64_t maxAttemptsPerThread)
 {
@@ -96,6 +134,9 @@ void MineThread(CBlockHeader genesis, const Consensus::Params& consensus,
             genesis.nBits,
             consensus.powLimit,
             maxAttemptsPerThread);
+
+        // 统计hash次数
+        g_totalHashes.fetch_add(maxAttemptsPerThread);
 
         if (mined && RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) {
             if (!g_found.exchange(true)) {
@@ -176,13 +217,24 @@ public:
         m_assumed_chain_state_size = 14;
 
         // Create genesis with nonce 0, then find a valid nonce using RandomQ
-        genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1756857263, 1379716, 0x1e0ffff0, 1, 50 * COIN);
 
 
         const int numThreads = std::thread::hardware_concurrency(); // 自动取CPU核心数
         const uint64_t attemptsPerThread = 1000000ULL;
 
+        // 初始化挖矿开始时间
+        g_startTime.store(GetTime());
+        g_totalHashes.store(0);
+        g_found.store(false);
+
+        std::cout << "Starting RandomQ mining with " << numThreads << " threads..." << std::endl;
+        std::cout << "Target: " << std::hex << std::setw(8) << std::setfill('0') << 0x1e0ffff0 << std::dec << std::endl;
+
         std::vector<std::thread> threads;
+
+        // 启动hash率报告线程
+        std::thread reporterThread(HashRateReporter);
 
         for (int i = 0; i < numThreads; ++i) {
             CBlockHeader thread_genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN); // 每个线程独立拷贝
@@ -194,18 +246,28 @@ public:
             if (t.joinable()) t.join();
         }
 
+        // 等待报告线程结束
+        if (reporterThread.joinable()) {
+            reporterThread.join();
+        }
+
+        // 显示最终统计信息
+        uint64_t totalTime = GetTime() - g_startTime.load();
+        double finalHashrate = (double)g_totalHashes.load() / totalTime;
+        
         std::cout << "Mining finished." << std::endl;
+        std::cout << "Final Statistics:" << std::endl;
+        std::cout << "  Total hashes: " << g_totalHashes.load() << std::endl;
+        std::cout << "  Total time: " << totalTime << " seconds" << std::endl;
+        std::cout << "  Average hash rate: " << std::fixed << std::setprecision(2) << finalHashrate << " H/s" << std::endl;
         
         // Use the found genesis block if one was found
         if (g_found.load()) {
             genesis = g_found_genesis;
         }
 
-        while (true) {
-        }
-
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256{"0000046a6e93e2caec8c891f5e3186df12f00a8c0a30499a7fc3a3ae9cd39fe5"});
+        assert(consensus.hashGenesisBlock == uint256{"00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f"});
         assert(genesis.hashMerkleRoot == uint256{"b0e14069031ce67080e53fe3d2cdbc23d0949fd85efac43e67ffdcf07d66d541"});
 
         // Note that of those which support the service bits prefix, most only support a subset of
