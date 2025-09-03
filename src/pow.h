@@ -29,12 +29,9 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256 pow_
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params&);
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params&);
 
-/** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);
-bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);
-
-/** Check whether a block header satisfies the proof-of-work requirement using RandomQ algorithm */
+/** Check whether a block header satisfies the proof-of-work requirement specified by nBits */
 bool CheckProofOfWork(const CBlockHeader& block, unsigned int nBits, const Consensus::Params&);
+bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);
 
 /**
  * Return false if the proof-of-work requirement specified by new_nbits at a

@@ -85,55 +85,71 @@ BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_negative_target)
 {
     const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    uint256 hash;
-    unsigned int nBits;
-    nBits = UintToArith256(consensus.powLimit).GetCompact(true);
-    hash = uint256{1};
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256{1};
+    header.hashMerkleRoot = uint256{2};
+    header.nTime = 1234567890;
+    header.nBits = UintToArith256(consensus.powLimit).GetCompact(true);
+    header.nNonce = 0;
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_overflow_target)
 {
     const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    uint256 hash;
-    unsigned int nBits{~0x00800000U};
-    hash = uint256{1};
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256{1};
+    header.hashMerkleRoot = uint256{2};
+    header.nTime = 1234567890;
+    header.nBits = ~0x00800000U;
+    header.nNonce = 0;
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_too_easy_target)
 {
     const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    uint256 hash;
-    unsigned int nBits;
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256{1};
+    header.hashMerkleRoot = uint256{2};
+    header.nTime = 1234567890;
     arith_uint256 nBits_arith = UintToArith256(consensus.powLimit);
     nBits_arith *= 2;
-    nBits = nBits_arith.GetCompact();
-    hash = uint256{1};
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    header.nBits = nBits_arith.GetCompact();
+    header.nNonce = 0;
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_biger_hash_than_target)
 {
     const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    uint256 hash;
-    unsigned int nBits;
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256{1};
+    header.hashMerkleRoot = uint256{2};
+    header.nTime = 1234567890;
     arith_uint256 hash_arith = UintToArith256(consensus.powLimit);
-    nBits = hash_arith.GetCompact();
+    header.nBits = hash_arith.GetCompact();
     hash_arith *= 2; // hash > nBits
-    hash = ArithToUint256(hash_arith);
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    header.nNonce = 0;
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_zero_target)
 {
     const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    uint256 hash;
-    unsigned int nBits;
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashPrevBlock = uint256{1};
+    header.hashMerkleRoot = uint256{2};
+    header.nTime = 1234567890;
     arith_uint256 hash_arith{0};
-    nBits = hash_arith.GetCompact();
-    hash = ArithToUint256(hash_arith);
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
+    header.nBits = hash_arith.GetCompact();
+    header.nNonce = 0;
+    BOOST_CHECK(!CheckProofOfWork(header, header.nBits, consensus));
 }
 
 BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test)
@@ -236,23 +252,6 @@ BOOST_AUTO_TEST_CASE(CheckRandomQProofOfWork_test)
     BOOST_CHECK(result == true || result == false);
 }
 
-// Test backward compatibility with hash-based CheckProofOfWork
-BOOST_AUTO_TEST_CASE(CheckProofOfWork_backward_compatibility)
-{
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
-    
-    // Test the old hash-based function still works
-    uint256 hash = uint256::ZERO;
-    unsigned int nBits = 0x1e0ffff0;
-    
-    // This should fail because hash is zero
-    BOOST_CHECK(!CheckProofOfWork(hash, nBits, consensus));
-    
-    // Test with a hash that meets the target
-    arith_uint256 target;
-    target.SetCompact(nBits);
-    hash = ArithToUint256(target / 2); // hash < target, should pass
-    BOOST_CHECK(CheckProofOfWork(hash, nBits, consensus));
-}
+
 
 BOOST_AUTO_TEST_SUITE_END()
