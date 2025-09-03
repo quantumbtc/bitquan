@@ -1248,7 +1248,7 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         SpanReader{data} >> TX_WITH_WITNESS(block);
         // Parse pow limit from RPC to avoid needing Params() in CLI
         const std::string pow_limit_hex = res["pow_limit"].get_str();
-        uint256 pow_limit_u = uint256S(pow_limit_hex);
+        uint256 pow_limit_u = uint256(pow_limit_hex);
         const uint256 pow_limit = pow_limit_u;
 
         uint64_t total_hashes = 0;
