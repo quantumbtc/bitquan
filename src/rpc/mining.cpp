@@ -540,9 +540,9 @@ static RPCHelpMan generate()
             "\nStart continuous mining to myaddress\n" + HelpExampleCli("generate", "0 \"myaddress\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const auto num_blocks{self.Arg<int>("num_blocks")};
-    const auto max_tries{self.Arg<uint64_t>("maxtries")};
-    const auto address{self.Arg<std::string>("address")};
+    const int num_blocks{request.params[0].getInt<int>()};
+    const uint64_t max_tries{request.params.size() > 2 && !request.params[2].isNull() ? request.params[2].getInt<int>() : DEFAULT_MAX_TRIES};
+    const std::string address{request.params[1].get_str()};
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     Mining& miner = EnsureMining(node);
