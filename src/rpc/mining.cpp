@@ -39,7 +39,7 @@
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
-#include <script/standard.h>
+#include <script/solver.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/signalinterrupt.h>
@@ -288,7 +288,22 @@ static bool getScriptFromAddress(const std::string& address, CScript& script, st
         return false;
     }
     
-    script = GetScriptForDestination(destination);
+    // 基于目标地址类型生成脚本
+    if (auto witness_id = std::get_if<WitnessV0KeyHash>(&destination)) {
+        script = CScript() << OP_0 << ToByteVector(*witness_id);
+    } else if (auto key_id = std::get_if<PKHash>(&destination)) {
+        script = CScript() << OP_DUP << OP_HASH160 << ToByteVector(*key_id) << OP_EQUALVERIFY << OP_CHECKSIG;
+    } else if (auto script_id = std::get_if<ScriptHash>(&destination)) {
+        script = CScript() << OP_HASH160 << ToByteVector(*script_id) << OP_EQUAL;
+    } else if (auto witness_script_id = std::get_if<WitnessV0ScriptHash>(&destination)) {
+        script = CScript() << OP_0 << ToByteVector(*witness_script_id);
+    } else if (auto tr_dest = std::get_if<WitnessV1Taproot>(&destination)) {
+        script = CScript() << OP_1 << ToByteVector(*tr_dest);
+    } else {
+        error = "Unsupported address type";
+        return false;
+    }
+    
     return true;
 }
 
