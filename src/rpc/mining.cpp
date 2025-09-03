@@ -39,6 +39,7 @@
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
+#include <script/standard.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/signalinterrupt.h>
@@ -276,6 +277,19 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
     }
 
     return false;
+}
+
+// 从地址获取脚本的函数
+static bool getScriptFromAddress(const std::string& address, CScript& script, std::string& error)
+{
+    const auto destination = DecodeDestination(address);
+    if (!IsValidDestination(destination)) {
+        error = "Invalid address";
+        return false;
+    }
+    
+    script = GetScriptForDestination(destination);
+    return true;
 }
 
 // 连续挖矿线程函数
