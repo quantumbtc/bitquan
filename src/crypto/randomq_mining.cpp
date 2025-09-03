@@ -34,7 +34,7 @@ bool CheckRandomQProofOfWork(const CBlockHeader& block, unsigned int nBits, cons
     return UintToArith256(hash) <= target;
 }
 
-bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& powLimit, uint64_t /*maxAttempts*/)
+bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& powLimit)
 {
     // Derive target from nBits
     arith_uint256 target;

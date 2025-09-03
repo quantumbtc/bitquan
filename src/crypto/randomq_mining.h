@@ -17,7 +17,7 @@ namespace RandomQMining {
 bool CheckRandomQProofOfWork(const CBlockHeader& block, unsigned int nBits, const uint256& powLimit);
 
 /** Find a valid nonce for RandomQ mining */
-bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& powLimit, uint64_t maxAttempts = 1000000);
+bool FindRandomQNonce(CBlockHeader& block, unsigned int nBits, const uint256& powLimit);
 
 /** Calculate RandomQ hash for a block header */
 uint256 CalculateRandomQHash(const CBlockHeader& block);

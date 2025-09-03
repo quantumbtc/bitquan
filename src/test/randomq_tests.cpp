@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(randomq_mining_test)
     BOOST_CHECK(!valid); // Should fail with nonce 0
     
     // Test nonce finding
-    bool found = RandomQMining::FindRandomQNonce(header, header.nBits, powLimit, 1000);
+    bool found = RandomQMining::FindRandomQNonce(header, header.nBits, powLimit);
     if (found) {
         BOOST_CHECK(header.nNonce > 0);
         

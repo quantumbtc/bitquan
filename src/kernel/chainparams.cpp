@@ -126,17 +126,16 @@ void HashRateReporter() {
 }
 
 void MineThread(CBlockHeader genesis, const Consensus::Params& consensus,
-                uint32_t threadId, uint64_t maxAttemptsPerThread)
+                uint32_t threadId)
 {
     while (!g_found.load()) {
         bool mined = RandomQMining::FindRandomQNonce(
             genesis,
             genesis.nBits,
-            consensus.powLimit,
-            maxAttemptsPerThread);
+            consensus.powLimit);
 
-        // 统计hash次数
-        g_totalHashes.fetch_add(maxAttemptsPerThread);
+        // 统计hash次数 - FindRandomQNonce每次只计算1次hash
+        g_totalHashes.fetch_add(1);
 
         if (mined && RandomQMining::CheckRandomQProofOfWork(genesis, genesis.nBits, consensus.powLimit)) {
             if (!g_found.exchange(true)) {
@@ -221,7 +220,6 @@ public:
 
 
         const int numThreads = std::thread::hardware_concurrency(); // 自动取CPU核心数
-        const uint64_t attemptsPerThread = 1000000ULL;
 
         // 初始化挖矿开始时间
         g_startTime.store(GetTime());
@@ -239,7 +237,7 @@ public:
         for (int i = 0; i < numThreads; ++i) {
             CBlockHeader thread_genesis = CreateGenesisBlock(1756526185, 0, 0x1e0ffff0, 1, 50 * COIN); // 每个线程独立拷贝
             thread_genesis.nNonce = i * 1000000ULL;             // 避免nonce重叠
-            threads.emplace_back(MineThread, thread_genesis, consensus, i, attemptsPerThread);
+            threads.emplace_back(MineThread, thread_genesis, consensus, i);
         }
 
         for (auto& t : threads) {
