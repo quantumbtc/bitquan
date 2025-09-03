@@ -540,8 +540,26 @@ static RPCHelpMan generate()
             "\nStart continuous mining to myaddress\n" + HelpExampleCli("generate", "0 \"myaddress\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const int num_blocks{request.params[0].getInt<int>()};
-    const uint64_t max_tries{request.params.size() > 2 && !request.params[2].isNull() ? request.params[2].getInt<int>() : DEFAULT_MAX_TRIES};
+    int num_blocks;
+    if (request.params[0].isNum()) {
+        num_blocks = request.params[0].getInt<int>();
+    } else if (request.params[0].isStr()) {
+        num_blocks = LocaleIndependentAtoi<int64_t>(request.params[0].get_str());
+    } else {
+        throw JSONRPCError(RPC_TYPE_ERROR, "num_blocks must be a number");
+    }
+
+    uint64_t max_tries = DEFAULT_MAX_TRIES;
+    if (request.params.size() > 2 && !request.params[2].isNull()) {
+        if (request.params[2].isNum()) {
+            max_tries = request.params[2].getInt<int64_t>();
+        } else if (request.params[2].isStr()) {
+            max_tries = LocaleIndependentAtoi<int64_t>(request.params[2].get_str());
+        } else {
+            throw JSONRPCError(RPC_TYPE_ERROR, "maxtries must be a number");
+        }
+    }
+
     const std::string address{request.params[1].get_str()};
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
