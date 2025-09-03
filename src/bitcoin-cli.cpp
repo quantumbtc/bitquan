@@ -1302,35 +1302,32 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                 
                 // Local counters to reduce atomic operations
                 uint64_t local_hashes = 0;
-                const uint64_t report_batch = 10000; // Report every 10k hashes to reduce contention
+                const uint64_t report_batch = 1000; // Report every 1k hashes for better real-time stats
                 
-                // Optimized mining loop with reduced condition checks
-                const uint64_t check_interval = 50000; // Check stop condition every 50k iterations
+                // Simplified mining loop for better debugging
+                const uint64_t check_interval = 1000; // Check stop condition every 1k iterations
                 
                 if (!continuous) {
                     uint64_t tries = 0;
-                    while (tries < maxtries) {
-                        // Inner loop with minimal condition checks - unroll for better performance
+                    while (tries < maxtries && !stop.load(std::memory_order_relaxed)) {
+                        // Simple inner loop
                         for (uint64_t j = 0; j < check_interval && tries < maxtries; ++j) {
-                            // Unroll the loop 4 times to reduce branch overhead
-                            for (int k = 0; k < 4 && tries < maxtries; ++k) {
-                                bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
-                                local_hashes++;
-                                tries++;
-                                
-                                if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
-                                    // Add remaining local hashes
-                                    if (local_hashes > 0) {
-                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                                    }
-                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                        block = local_block;
-                                        stop.store(true, std::memory_order_release);
-                                    }
-                                    return;
+                            bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
+                            local_hashes++;
+                            tries++;
+                            
+                            if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                                // Add remaining local hashes
+                                if (local_hashes > 0) {
+                                    total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
                                 }
-                                local_block.nNonce += 1;
+                                if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                    block = local_block;
+                                    stop.store(true, std::memory_order_release);
+                                }
+                                return;
                             }
+                            local_block.nNonce += 1;
                         }
                         
                         // Batch update global counter to reduce contention
@@ -1339,11 +1336,8 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             local_hashes = 0;
                         }
                         
-                        // Check stop condition less frequently
-                        if (stop.load(std::memory_order_relaxed)) break;
-                        
                         // Update time less frequently to reduce overhead
-                        if (tries % 10000000 == 0) {
+                        if (tries % 100000 == 0) {
                             local_block.nTime = GetTime();
                         }
                     }
@@ -1354,27 +1348,24 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                 } else {
                     uint64_t tries = 0;
                     while (!stop.load(std::memory_order_relaxed)) {
-                        // Inner loop with minimal condition checks - unroll for better performance
+                        // Simple inner loop
                         for (uint64_t j = 0; j < check_interval; ++j) {
-                            // Unroll the loop 4 times to reduce branch overhead
-                            for (int k = 0; k < 4; ++k) {
-                                bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
-                                local_hashes++;
-                                tries++;
-                                
-                                if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
-                                    // Add remaining local hashes
-                                    if (local_hashes > 0) {
-                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                                    }
-                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                        block = local_block;
-                                        stop.store(true, std::memory_order_release);
-                                    }
-                                    return;
+                            bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
+                            local_hashes++;
+                            tries++;
+                            
+                            if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                                // Add remaining local hashes
+                                if (local_hashes > 0) {
+                                    total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
                                 }
-                                local_block.nNonce += 1;
+                                if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                    block = local_block;
+                                    stop.store(true, std::memory_order_release);
+                                }
+                                return;
                             }
+                            local_block.nNonce += 1;
                         }
                         
                         // Batch update global counter to reduce contention
@@ -1384,7 +1375,7 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                         }
                         
                         // Update time less frequently to reduce overhead
-                        if (local_hashes % 10000000 == 0) {
+                        if (tries % 100000 == 0) {
                             local_block.nTime = GetTime();
                         }
                     }
