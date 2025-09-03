@@ -23,6 +23,13 @@
 #include <util/strencodings.h>
 #include <util/time.h>
 #include <util/translation.h>
+#include <primitives/block.h>
+#include <streams.h>
+#include <serialize.h>
+#include <span.h>
+#include <arith_uint256.h>
+#include <uint256.h>
+#include <crypto/randomq_mining.h>
 
 #include <algorithm>
 #include <chrono>
@@ -1216,6 +1223,70 @@ static UniValue GetNewAddress()
     return ConnectAndCallRPC(&rh, "getnewaddress", /* args=*/{}, RpcWalletName(gArgs));
 }
 
+static UniValue SimpleRPC(const std::string& method, const std::vector<std::string>& args)
+{
+    DefaultRequestHandler rh;
+    return ConnectAndCallRPC(&rh, method, args, RpcWalletName(gArgs));
+}
+
+static void MineLocally(const std::string& address, std::optional<int> nblocks_opt, std::optional<uint64_t> maxtries_opt)
+{
+    const uint64_t report_interval_secs = 5;
+    int remaining = nblocks_opt.value_or(1);
+    while (remaining > 0) {
+        const UniValue reply = SimpleRPC("getminingwork", {address});
+        const UniValue& error = reply.find_value("error");
+        if (!error.isNull()) throw std::runtime_error(error.write());
+        const UniValue& res = reply.find_value("result");
+        CBlock block;
+        std::vector<unsigned char> data;
+        if (!TryParseHex(res["block"].get_str(), data)) throw std::runtime_error("getminingwork returned invalid hex");
+        SpanReader{data} >> TX_WITH_WITNESS(block);
+
+        uint64_t total_hashes = 0;
+        const int64_t start_time = GetTime();
+        int64_t last_time = start_time;
+        uint64_t last_hashes = 0;
+        const uint64_t maxtries = maxtries_opt.value_or(DEFAULT_MAX_TRIES);
+        uint64_t tries = 0;
+        bool found = false;
+        while (tries < maxtries) {
+            bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, Params().GetConsensus().powLimit);
+            total_hashes += 1;
+            tries += 1;
+            if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, Params().GetConsensus().powLimit)) { found = true; break; }
+            block.nNonce += 1;
+            block.nTime = GetTime();
+            const int64_t now = GetTime();
+            if (now - last_time >= (int64_t)report_interval_secs) {
+                const uint64_t dt = now - last_time;
+                const uint64_t dh = total_hashes - last_hashes;
+                const double cur = dt ? (double)dh / dt : 0.0;
+                const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
+                tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
+                last_time = now;
+                last_hashes = total_hashes;
+            }
+        }
+        if (!found) {
+            tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u\n", maxtries);
+            break;
+        }
+
+        DataStream ser;
+        ser << TX_WITH_WITNESS(block);
+        const std::string block_hex = HexStr(ser);
+        const UniValue sub = SimpleRPC("submitblock", {block_hex});
+        const UniValue& suberr = sub.find_value("error");
+        if (!suberr.isNull() && !suberr.isNull()) {
+            tfm::format(std::cerr, "[CLI Mining] submitblock error: %s\n", suberr.write());
+        } else {
+            tfm::format(std::cout, "[CLI Mining] Block mined: %s\n", block.GetHash().GetHex());
+        }
+        remaining--;
+    }
+}
+
 /**
  * Check bounds and set up args for RPC generatetoaddress params: nblocks, address, maxtries.
  * @param[in] address  Reference to const string address to insert into the args.
@@ -1389,18 +1460,21 @@ static int CommandLineRPC(int argc, char *argv[])
             const UniValue& error{getnewaddress.find_value("error")};
             if (error.isNull()) {
                 std::string address = getnewaddress.find_value("result").get_str();
-                
-                // Check if this is a loop mining request BEFORE calling SetGenerateToAddressArgs
-                bool is_loop = !args.empty() && args.at(0) == "loop";
-                
-                if (is_loop) {
-                    // For loop mining, handle it directly here
-                    StartLoopMining(address, args);
-                    return 0; // Exit after starting loop mining
+
+                // Parse args: [-generate] [N|maxtries] or [loop N maxtries]
+                bool loop = !args.empty() && args.at(0) == "loop";
+                std::optional<int> nblocks;
+                std::optional<uint64_t> maxtries;
+                if (loop) {
+                    if (args.size() > 1) nblocks = ToIntegral<int>(args[1]).value_or(1);
+                    if (args.size() > 2) maxtries = ToIntegral<uint64_t>(args[2]).value_or(DEFAULT_MAX_TRIES);
+                    MineLocally(address, nblocks, maxtries); // continuous: MineLocally ignores remaining when nblocks unset? handled as value_or(1)
+                    return 0;
                 } else {
-                    // For normal mining, set up the arguments
-                    SetGenerateToAddressArgs(address, args);
-                    rh.reset(new GenerateToAddressRequestHandler());
+                    if (args.size() > 0) nblocks = ToIntegral<int>(args[0]).value_or(1);
+                    if (args.size() > 1) maxtries = ToIntegral<uint64_t>(args[1]).value_or(DEFAULT_MAX_TRIES);
+                    MineLocally(address, nblocks, maxtries);
+                    return 0;
                 }
             } else {
                 ParseError(error, strPrint, nRet);
