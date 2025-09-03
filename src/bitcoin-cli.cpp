@@ -1242,6 +1242,9 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         std::vector<unsigned char> data;
         if (!TryParseHex(res["block"].get_str(), data)) throw std::runtime_error("getminingwork returned invalid hex");
         SpanReader{data} >> TX_WITH_WITNESS(block);
+        // Parse pow limit from RPC to avoid needing Params() in CLI
+        const std::string pow_limit_hex = res["pow_limit"].get_str();
+        const uint256 pow_limit = uint256S(pow_limit_hex);
 
         uint64_t total_hashes = 0;
         const int64_t start_time = GetTime();
@@ -1251,10 +1254,10 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         uint64_t tries = 0;
         bool found = false;
         while (tries < maxtries) {
-            bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, Params().GetConsensus().powLimit);
+            bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
             total_hashes += 1;
             tries += 1;
-            if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, Params().GetConsensus().powLimit)) { found = true; break; }
+            if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
             block.nNonce += 1;
             block.nTime = GetTime();
             const int64_t now = GetTime();
