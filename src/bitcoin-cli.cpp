@@ -1235,7 +1235,7 @@ static UniValue SimpleRPC(const std::string& method, const std::vector<std::stri
 
 static void MineLocally(const std::string& address, std::optional<int> nblocks_opt, std::optional<uint64_t> maxtries_opt)
 {
-    const uint64_t report_interval_secs = 5;
+    const uint64_t report_interval_secs = 30;
     const bool continuous = !nblocks_opt.has_value();
     int remaining = continuous ? 1 : nblocks_opt.value();
     while (continuous || remaining > 0) {
@@ -1401,8 +1401,8 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                         smoothed_rate = smoothing_factor * current_rate + (1.0 - smoothing_factor) * smoothed_rate;
                     }
                     
-                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | Total: %u\n", 
-                               num_threads, current_rate, smoothed_rate, avg, th);
+                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s\n", 
+                               num_threads, current_rate, smoothed_rate, avg);
                 }
                 
                 last_report_time = now;
