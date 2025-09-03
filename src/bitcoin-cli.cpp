@@ -1255,54 +1255,127 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
         }
         const uint256 pow_limit = pow_limit_opt.value();
 
-        uint64_t total_hashes = 0;
+        std::atomic<uint64_t> total_hashes{0};
         const int64_t start_time = GetTime();
-        int64_t last_time = start_time;
-        uint64_t last_hashes = 0;
+        std::atomic<int64_t> last_time{start_time};
+        std::atomic<uint64_t> last_hashes{0};
         const uint64_t maxtries = maxtries_opt.value_or(DEFAULT_MAX_TRIES);
-        uint64_t tries = 0;
-        bool found = false;
-        if (continuous) {
-            for (;;) {
-                bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
-                total_hashes += 1;
-                if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
-                block.nNonce += 1;
-                block.nTime = GetTime();
-                const int64_t now = GetTime();
-                if (now - last_time >= (int64_t)report_interval_secs) {
-                    const uint64_t dt = now - last_time;
-                    const uint64_t dh = total_hashes - last_hashes;
-                    const double cur = dt ? (double)dh / dt : 0.0;
-                    const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
-                    tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
-                    last_time = now;
-                    last_hashes = total_hashes;
+        
+        std::atomic<bool> found{false};
+        std::atomic<bool> stop{false};
+
+        const unsigned int num_threads = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> workers;
+        workers.reserve(num_threads);
+
+        // Per-thread mining with optimized nonce distribution
+        for (unsigned int i = 0; i < num_threads; ++i) {
+            workers.emplace_back([&, i]() {
+                CBlock local_block = block;
+                // Large nonce offset per thread to avoid overlap
+                local_block.nNonce = local_block.nNonce + i * 0x100000000ULL; // 4 billion offset per thread
+                
+                // Local counters to reduce atomic operations
+                uint64_t local_hashes = 0;
+                const uint64_t report_batch = 10000; // Report every 10k hashes to reduce contention
+                
+                if (!continuous) {
+                    uint64_t tries = 0;
+                    while (!stop.load(std::memory_order_relaxed) && tries < maxtries) {
+                        bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
+                        local_hashes++;
+                        tries++;
+                        
+                        // Batch update global counter to reduce contention
+                        if (local_hashes % report_batch == 0) {
+                            total_hashes.fetch_add(report_batch, std::memory_order_relaxed);
+                            local_hashes = 0;
+                        }
+                        
+                        if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                            // Add remaining local hashes
+                            if (local_hashes > 0) {
+                                total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                            }
+                            if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                block = local_block;
+                                stop.store(true, std::memory_order_release);
+                            }
+                            return;
+                        }
+                        local_block.nNonce += 1;
+                        // Update time less frequently to reduce overhead
+                        if (tries % 100000 == 0) {
+                            local_block.nTime = GetTime();
+                        }
+                    }
+                    // Add remaining local hashes
+                    if (local_hashes > 0) {
+                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                    }
+                } else {
+                    while (!stop.load(std::memory_order_relaxed)) {
+                        bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
+                        local_hashes++;
+                        
+                        // Batch update global counter to reduce contention
+                        if (local_hashes % report_batch == 0) {
+                            total_hashes.fetch_add(report_batch, std::memory_order_relaxed);
+                            local_hashes = 0;
+                        }
+                        
+                        if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
+                            // Add remaining local hashes
+                            if (local_hashes > 0) {
+                                total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                            }
+                            if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                block = local_block;
+                                stop.store(true, std::memory_order_release);
+                            }
+                            return;
+                        }
+                        local_block.nNonce += 1;
+                        // Update time less frequently to reduce overhead
+                        if (local_hashes % 100000 == 0) {
+                            local_block.nTime = GetTime();
+                        }
+                    }
+                    // Add remaining local hashes
+                    if (local_hashes > 0) {
+                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                    }
                 }
-            }
-        } else {
-            while (tries < maxtries) {
-                bool mined = RandomQMining::FindRandomQNonce(block, block.nBits, pow_limit);
-                total_hashes += 1;
-                tries += 1;
-                if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, pow_limit)) { found = true; break; }
-                block.nNonce += 1;
-                block.nTime = GetTime();
+            });
+        }
+
+        // Reporter thread
+        std::thread reporter([&]() {
+            while (!stop.load(std::memory_order_relaxed)) {
+                std::this_thread::sleep_for(std::chrono::seconds(report_interval_secs));
                 const int64_t now = GetTime();
-                if (now - last_time >= (int64_t)report_interval_secs) {
-                    const uint64_t dt = now - last_time;
-                    const uint64_t dh = total_hashes - last_hashes;
-                    const double cur = dt ? (double)dh / dt : 0.0;
-                    const double avg = (now - start_time) ? (double)total_hashes / (now - start_time) : 0.0;
-                    tfm::format(std::cout, "[CLI Mining] Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", cur, avg, total_hashes);
-                    last_time = now;
-                    last_hashes = total_hashes;
+                const uint64_t th = total_hashes.load(std::memory_order_relaxed);
+                const uint64_t dh = th - last_hashes.load(std::memory_order_relaxed);
+                const int64_t dt = now - last_time.load(std::memory_order_relaxed);
+                if (dt > 0) {
+                    const double cur = (double)dh / dt;
+                    const double avg = (now - start_time) ? (double)th / (now - start_time) : 0.0;
+                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Average: %.2f H/s | Total: %u\n", num_threads, cur, avg, th);
                 }
+                last_time.store(now, std::memory_order_relaxed);
+                last_hashes.store(th, std::memory_order_relaxed);
             }
-            if (!found) {
-                tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u\n", maxtries);
-                break;
-            }
+        });
+
+        // Join workers
+        for (auto& t : workers) t.join();
+        stop.store(true, std::memory_order_release);
+        if (reporter.joinable()) reporter.join();
+
+        if (!found.load(std::memory_order_relaxed)) {
+            tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u across %u threads\n", maxtries, num_threads);
+            if (!continuous) break;
+            continue;
         }
 
         DataStream ser;
