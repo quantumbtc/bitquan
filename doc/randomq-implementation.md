@@ -1,64 +1,64 @@
-# RandomQ抗量子算法实现
+# RandomQ Post-Quantum Algorithm Implementation
 
-本文档描述了在Bitcoin Core中实现的RandomQ抗量子算法，该算法用于替换传统的SHA256D工作量证明算法。
+This document describes the RandomQ post-quantum algorithm implemented in Bitcoin Core, replacing the traditional SHA256D proof-of-work algorithm.
 
-## 概述
+## Overview
 
-RandomQ是一个基于门罗币(Monero)抗量子算法的改进版本，实现了以下哈希流程：
+RandomQ is an improved variant of a Monero-inspired post-quantum algorithm, implementing the following hashing pipeline:
 
 ```
-区块头 -> SHA256 -> RandomQ -> SHA256 -> 最终哈希
+Block header -> SHA256 -> RandomQ -> SHA256 -> Final hash
 ```
 
-这种设计提供了抗量子计算的特性，同时保持了与现有Bitcoin协议的兼容性。
+This design provides post-quantum resistance while staying compatible with the existing Bitcoin protocol.
 
-## 算法特性
+## Algorithm Features
 
-### 1. 抗量子性
-- 基于格密码学和随机化算法
-- 抵抗量子计算机的Shor算法和Grover算法攻击
-- 使用200字节的内部状态和8192轮迭代
+### 1. Post-quantum resistance
+- Based on lattice cryptography and randomized algorithms
+- Resists quantum attacks such as Shor's and Grover's
+- Uses a 200-byte internal state and 8192 rounds
 
-### 2. 兼容性
-- 不改变现有的Bitcoin协议
-- 保持相同的区块头结构
-- 兼容现有的挖矿软件接口
+### 2. Compatibility
+- No changes to the Bitcoin protocol
+- Preserves the existing block header structure
+- Compatible with existing mining software interfaces
 
-### 3. 性能
-- 优化的C++实现
-- 支持多线程挖矿
-- 可配置的轮数参数
+### 3. Performance
+- Optimized C++ implementation
+- Multi-threaded mining support
+- Configurable number of rounds
 
-## 实现架构
+## Implementation Architecture
 
-### 核心组件
+### Core components
 
-1. **CRandomQ类** (`src/crypto/randomq.h/cpp`)
-   - RandomQ算法的核心实现
-   - 管理内部状态和轮函数
-   - 支持种子初始化和nonce设置
+1. **CRandomQ class** (`src/crypto/randomq.h/cpp`)
+   - Core implementation of the RandomQ algorithm
+   - Manages internal state and round function
+   - Supports seed initialization and nonce configuration
 
-2. **CRandomQHash类** (`src/crypto/randomq_hash.h`)
-   - 实现SHA256->RandomQ->SHA256的完整流程
-   - 提供标准化的哈希接口
-   - 支持流式输入处理
+2. **CRandomQHash class** (`src/crypto/randomq_hash.h`)
+   - Implements the full SHA256 -> RandomQ -> SHA256 pipeline
+   - Provides a standardized hashing interface
+   - Supports streaming input
 
-3. **RandomQMining命名空间** (`src/crypto/randomq_mining.h/cpp`)
-   - 挖矿相关的工具函数
-   - POW验证和nonce查找
-   - 优化的哈希计算
+3. **RandomQMining namespace** (`src/crypto/randomq_mining.h/cpp`)
+   - Mining utilities
+   - POW verification and nonce search
+   - Optimized hashing routines
 
-### 修改的文件
+### Modified files
 
-- `src/primitives/block.cpp` - 修改区块头哈希计算
-- `src/rpc/mining.cpp` - 更新挖矿逻辑
-- `src/test/util/mining.cpp` - 更新测试挖矿代码
-- `src/bitcoin-util.cpp` - 更新挖矿工具
-- `src/crypto/CMakeLists.txt` - 添加新的源文件
+- `src/primitives/block.cpp` – update block header hash
+- `src/rpc/mining.cpp` – update mining logic
+- `src/test/util/mining.cpp` – update test mining code
+- `src/bitcoin-util.cpp` – update mining tool
+- `src/crypto/CMakeLists.txt` – add new sources
 
-## 使用方法
+## Usage
 
-### 基本哈希计算
+### Basic hashing
 
 ```cpp
 #include <crypto/randomq_hash.h>
@@ -72,7 +72,7 @@ uint256 result;
 hasher.Finalize(result.begin());
 ```
 
-### 挖矿验证
+### Mining verification
 
 ```cpp
 #include <crypto/randomq_mining.h>
@@ -84,7 +84,7 @@ bool valid = RandomQMining::CheckRandomQProofOfWork(
 );
 ```
 
-### 查找有效nonce
+### Find a valid nonce
 
 ```cpp
 bool found = RandomQMining::FindRandomQNonce(
@@ -95,77 +95,77 @@ bool found = RandomQMining::FindRandomQNonce(
 );
 ```
 
-## 配置参数
+## Configuration
 
-### RandomQ参数
+### RandomQ parameters
 
-- **轮数**: 默认8192轮，可通过`SetRandomQRounds()`调整
-- **内部状态**: 200字节(25个64位整数)
-- **种子**: 可选的初始化种子
-- **Nonce**: 32位随机数，用于挖矿
+- **Rounds**: default 8192, adjustable via `SetRandomQRounds()`
+- **Internal state**: 200 bytes (25 x 64-bit words)
+- **Seed**: optional initialization seed
+- **Nonce**: 32-bit random value for mining
 
-### 性能调优
+### Performance tuning
 
-- 轮数越少，计算越快但安全性降低
-- 轮数越多，安全性越高但计算越慢
-- 建议在生产环境中使用8192轮或更高
+- Fewer rounds: faster but less secure
+- More rounds: more secure but slower
+- Recommended 8192+ rounds in production
 
-## 安全性考虑
+## Security Considerations
 
-### 抗量子特性
+### Post-quantum properties
 
-1. **格密码学基础**: 基于数学难题，对量子计算机具有抗性
-2. **随机化算法**: 使用随机状态转换，增加攻击难度
-3. **大状态空间**: 200字节的内部状态提供足够的熵
+1. **Lattice-based**: hard mathematical problems, quantum-resistant
+2. **Randomization**: randomized state transitions increase attack complexity
+3. **Large state space**: 200-byte state provides sufficient entropy
 
-### 攻击防护
+### Attack mitigations
 
-- **预计算攻击**: 通过随机种子和nonce防止
-- **碰撞攻击**: 双重SHA256提供额外保护
-- **量子攻击**: 算法设计专门抵抗量子计算
+- **Precomputation**: mitigated via random seed and nonce
+- **Collision**: dual SHA256 provides additional protection
+- **Quantum**: specifically designed to resist quantum attacks
 
-## 测试
+## Testing
 
-运行RandomQ测试：
+Run RandomQ tests:
 
 ```bash
 make check
-# 或者运行特定测试
+# Or run a specific test
 src/test/test_bitcoin --run_test=randomq_tests
 ```
 
-测试覆盖：
-- 基本哈希功能
-- 挖矿验证
-- 一致性检查
-- 性能优化
+Coverage:
+- Basic hashing
+- Mining verification
+- Consistency checks
+- Performance optimizations
 
-## 性能基准
+## Benchmarks
 
-### 哈希速度
-- SHA256D: ~1000 MB/s (参考)
-- RandomQ: ~10-50 MB/s (取决于轮数)
+### Hash throughput
+- SHA256D: ~1000 MB/s (reference)
+- RandomQ: ~10–50 MB/s (depends on rounds)
 
-### 挖矿效率
-- 相比传统SHA256D，RandomQ挖矿需要更多计算资源
-- 但提供了显著的抗量子安全性提升
+### Mining efficiency
+- Requires more compute than SHA256D
+- Provides significantly improved post-quantum security
 
-## 未来改进
+## Future work
 
-1. **硬件加速**: 开发专用ASIC或FPGA实现
-2. **参数优化**: 根据安全需求调整轮数和状态大小
-3. **并行化**: 进一步优化多线程性能
-4. **标准化**: 推动行业标准的RandomQ实现
+1. **Hardware acceleration**: ASIC/FPGA implementations
+2. **Parameter optimization**: tune rounds/state size per security needs
+3. **Parallelization**: further multi-threading optimizations
+4. **Standardization**: promote a standard RandomQ spec
 
-## 贡献
+## Contributing
 
-欢迎提交改进建议和代码贡献。请确保：
+Contributions are welcome. Please:
 
-1. 遵循现有的代码风格
-2. 添加适当的测试
-3. 更新相关文档
-4. 通过所有测试套件
+1. Follow existing code style
+2. Add appropriate tests
+3. Update related documentation
+4. Pass all test suites
 
-## 许可证
+## License
 
-本项目遵循MIT许可证，详见COPYING文件。
+This project is under the MIT license. See COPYING for details.

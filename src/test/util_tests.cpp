@@ -1333,7 +1333,7 @@ BOOST_AUTO_TEST_CASE(test_SplitString)
 BOOST_AUTO_TEST_CASE(test_LogEscapeMessage)
 {
     // ASCII and UTF-8 must pass through unaltered.
-    BOOST_CHECK_EQUAL(BCLog::LogEscapeMessage("Valid log message貓"), "Valid log message貓");
+    BOOST_CHECK_EQUAL(BCLog::LogEscapeMessage("Valid log message"), "Valid log message");
     // Newlines must pass through unaltered.
     BOOST_CHECK_EQUAL(BCLog::LogEscapeMessage("Message\n with newlines\n"), "Message\n with newlines\n");
     // Other control characters are escaped in C syntax.

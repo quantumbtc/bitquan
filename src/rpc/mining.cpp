@@ -141,14 +141,14 @@ static RPCHelpMan getnetworkhashps()
     };
 }
 
-// 高级挖矿相关全局变量
+// Advanced mining related global variables
 std::atomic<bool> g_mining_found(false);
 std::mutex g_mining_print_mutex;
 CBlock g_found_block;
 std::atomic<uint64_t> g_mining_total_hashes(0);
 std::atomic<uint64_t> g_mining_start_time(0);
 
-// 连续挖矿控制变量
+// Continuous mining control variables
 std::atomic<bool> g_continuous_mining(false);
 std::atomic<bool> g_stop_mining(false);
 std::thread g_continuous_mining_thread;
@@ -156,13 +156,13 @@ std::mutex g_continuous_mining_mutex;
 std::string g_mining_address;
 std::atomic<uint64_t> g_blocks_mined(0);
 
-// Hash率报告线程函数
+// Hash rate reporter thread function
 void MiningHashRateReporter() {
     uint64_t lastTotalHashes = 0;
     uint64_t lastReportTime = g_mining_start_time.load();
     
     while (!g_mining_found.load()) {
-        std::this_thread::sleep_for(std::chrono::seconds(5)); // 每5秒报告一次
+        std::this_thread::sleep_for(std::chrono::seconds(5)); // report every 5 seconds
         
         uint64_t currentTime = GetTime();
         uint64_t currentTotalHashes = g_mining_total_hashes.load();
@@ -184,7 +184,7 @@ void MiningHashRateReporter() {
     }
 }
 
-// 挖矿线程函数
+// Mining thread function
 void MiningThread(CBlock block, const Consensus::Params& consensus, uint32_t threadId) {
     while (!g_mining_found.load()) {
         bool mined = RandomQMining::FindRandomQNonce(
@@ -192,7 +192,7 @@ void MiningThread(CBlock block, const Consensus::Params& consensus, uint32_t thr
             block.nBits,
             consensus.powLimit);
 
-        // 统计hash次数
+        // Count hash attempts
         g_mining_total_hashes.fetch_add(1);
 
         if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, consensus.powLimit)) {
@@ -211,19 +211,19 @@ void MiningThread(CBlock block, const Consensus::Params& consensus, uint32_t thr
             return;
         }
 
-        // 如果没找到，继续尝试递增 nonce
+        // If not found, continue trying by incrementing the nonce
         block.nNonce += 1;
         block.nTime = GetTime();
     }
 }
 
-// 高级多线程挖矿函数
+// Advanced multi-threaded mining function
 static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    // 初始化挖矿状态
+    // Initialize mining state
     g_mining_start_time.store(GetTime());
     g_mining_total_hashes.store(0);
     g_mining_found.store(false);
@@ -234,12 +234,12 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
 
     std::vector<std::thread> threads;
 
-    // 启动hash率报告线程
+    // Start hash rate reporter thread
     std::thread reporterThread(MiningHashRateReporter);
 
     for (int i = 0; i < numThreads; ++i) {
-        CBlock thread_block = block; // 每个线程独立拷贝
-        thread_block.nNonce = i * 1000000ULL; // 避免nonce重叠
+        CBlock thread_block = block; // independent copy per thread
+        thread_block.nNonce = i * 1000000ULL; // avoid nonce overlap
         threads.emplace_back(MiningThread, thread_block, chainman.GetConsensus(), i);
     }
 
@@ -247,12 +247,12 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
         if (t.joinable()) t.join();
     }
 
-    // 等待报告线程结束
+    // Wait for reporter thread to finish
     if (reporterThread.joinable()) {
         reporterThread.join();
     }
 
-    // 显示最终统计信息
+    // Display final statistics
     uint64_t totalTime = GetTime() - g_mining_start_time.load();
     double finalHashrate = (double)g_mining_total_hashes.load() / totalTime;
     
@@ -262,7 +262,7 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
     std::cout << "  Total time: " << totalTime << " seconds" << std::endl;
     std::cout << "  Average hash rate: " << std::fixed << std::setprecision(2) << finalHashrate << " H/s" << std::endl;
 
-    // 使用找到的区块
+    // Use the found block
     if (g_mining_found.load()) {
         block = g_found_block;
         block_out = std::make_shared<const CBlock>(std::move(block));
@@ -279,7 +279,7 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
     return false;
 }
 
-// 从地址获取脚本的函数
+// Function to derive script from address
 static bool getScriptFromAddress(const std::string& address, CScript& script, std::string& error)
 {
     const auto destination = DecodeDestination(address);
@@ -288,7 +288,7 @@ static bool getScriptFromAddress(const std::string& address, CScript& script, st
         return false;
     }
     
-    // 基于目标地址类型生成脚本
+    // Generate script based on destination type
     if (auto witness_id = std::get_if<WitnessV0KeyHash>(&destination)) {
         script = CScript() << OP_0 << ToByteVector(*witness_id);
     } else if (auto key_id = std::get_if<PKHash>(&destination)) {
@@ -307,14 +307,14 @@ static bool getScriptFromAddress(const std::string& address, CScript& script, st
     return true;
 }
 
-// 连续挖矿线程函数
+// Continuous mining worker thread function
 void ContinuousMiningWorker(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script) {
     std::cout << "Starting continuous mining to address..." << std::endl;
     g_blocks_mined.store(0);
     
     while (g_continuous_mining.load() && !g_stop_mining.load()) {
         try {
-            // 创建新区块模板
+            // Create new block template
             std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ 
                 .coinbase_output_script = coinbase_output_script 
             }));
@@ -328,7 +328,7 @@ void ContinuousMiningWorker(ChainstateManager& chainman, Mining& miner, const CS
             std::shared_ptr<const CBlock> block_out;
             uint64_t max_tries = DEFAULT_MAX_TRIES;
             
-            // 使用高级挖矿算法挖矿
+            // Mine using advanced algorithm
             if (AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, true)) {
                 g_blocks_mined.fetch_add(1);
                 uint64_t total_blocks = g_blocks_mined.load();
@@ -350,15 +350,15 @@ void ContinuousMiningWorker(ChainstateManager& chainman, Mining& miner, const CS
     std::cout << "Continuous mining stopped. Total blocks mined: " << g_blocks_mined.load() << std::endl;
 }
 
-// 启动连续挖矿
+// Start continuous mining
 bool StartContinuousMining(ChainstateManager& chainman, Mining& miner, const std::string& address) {
     std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
     
     if (g_continuous_mining.load()) {
-        return false; // 已经在挖矿
+        return false; // already mining
     }
     
-    // 解析地址
+    // Parse address
     CScript coinbase_output_script;
     std::string error;
     if (!getScriptFromAddress(address, coinbase_output_script, error)) {
@@ -369,7 +369,7 @@ bool StartContinuousMining(ChainstateManager& chainman, Mining& miner, const std
     g_continuous_mining.store(true);
     g_stop_mining.store(false);
     
-    // 启动连续挖矿线程
+    // Start continuous mining thread
     g_continuous_mining_thread = std::thread(ContinuousMiningWorker, 
                                             std::ref(chainman), 
                                             std::ref(miner), 
@@ -378,18 +378,18 @@ bool StartContinuousMining(ChainstateManager& chainman, Mining& miner, const std
     return true;
 }
 
-// 停止连续挖矿
+// Stop continuous mining
 bool StopContinuousMining() {
     std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
     
     if (!g_continuous_mining.load()) {
-        return false; // 没有在挖矿
+        return false; // not mining
     }
     
     g_stop_mining.store(true);
     g_continuous_mining.store(false);
     
-    // 等待挖矿线程结束
+    // Wait for mining thread to finish
     if (g_continuous_mining_thread.joinable()) {
         g_continuous_mining_thread.join();
     }
@@ -397,7 +397,7 @@ bool StopContinuousMining() {
     return true;
 }
 
-// 获取挖矿状态
+// Get mining status
 UniValue GetMiningStatus() {
     UniValue result(UniValue::VOBJ);
     result.pushKV("continuous_mining", g_continuous_mining.load());
@@ -417,7 +417,7 @@ UniValue GetMiningStatus() {
 
 static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
-    // 使用高级多线程挖矿算法
+    // Use advanced multi-threaded mining algorithm
     return AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block);
 }
 
@@ -551,7 +551,7 @@ static RPCHelpMan generate()
     UniValue result(UniValue::VOBJ);
     
     if (num_blocks == 0) {
-        // 连续挖矿模式
+        // Continuous mining mode
         if (StartContinuousMining(chainman, miner, address)) {
             result.pushKV("blocks", UniValue(UniValue::VARR));
             result.pushKV("continuous", true);
@@ -563,7 +563,7 @@ static RPCHelpMan generate()
             result.pushKV("message", "Continuous mining is already running");
         }
     } else {
-        // 指定数量挖矿模式
+        // Fixed-count mining mode
         CScript coinbase_output_script;
         std::string error;
         if (!getScriptFromAddress(address, coinbase_output_script, error)) {

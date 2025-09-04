@@ -1,147 +1,147 @@
-# 比特币循环挖矿功能
+# Bitcoin Loop Mining Feature
 
-## 概述
+## Overview
 
-我们已经成功修改了 `bitcoin-cli` 的 `-generate` 命令，现在支持可持续挖矿功能。这个功能允许你持续生成区块，直到手动停止。
+We have extended the `bitcoin-cli` `-generate` command to support loop/continuous mining. This allows you to continuously generate blocks until manually stopped.
 
-## 新功能特性
+## Features
 
-### 1. 循环挖矿语法
+### 1. Loop mining syntax
 ```bash
-# 基本语法
+# Basic syntax
 bitcoin-cli -generate loop [nblocks] [maxtries]
 
-# 示例
-bitcoin-cli -generate loop 1 1000    # 每次生成1个区块，最大尝试1000次
-bitcoin-cli -generate loop 2 500     # 每次生成2个区块，最大尝试500次
-bitcoin-cli -generate loop           # 使用默认值：每次生成1个区块
+# Examples
+bitcoin-cli -generate loop 1 1000    # generate 1 block per iteration, max 1000 tries
+bitcoin-cli -generate loop 2 500     # generate 2 blocks per iteration, max 500 tries
+bitcoin-cli -generate loop           # use defaults: 1 block per iteration
 ```
 
-### 2. 参数说明
-- `loop`: 启用循环挖矿模式
-- `nblocks`: 每次迭代生成的区块数量（可选，默认为1）
-- `maxtries`: 每个区块的最大尝试次数（可选，默认为1000000）
+### 2. Parameters
+- `loop`: enable loop mining mode
+- `nblocks`: number of blocks per iteration (optional, default 1)
+- `maxtries`: max tries per block (optional, default 1000000)
 
-### 3. 使用方法
+### 3. Usage
 
 #### Linux/Mac
 ```bash
-# 开始循环挖矿
+# Start loop mining
 bitcoin-cli -generate loop 1 1000
 
-# 或者使用测试脚本
+# Or use the test script
 chmod +x test_mining_loop.sh
 ./test_mining_loop.sh
 ```
 
 #### Windows
 ```cmd
-# 开始循环挖矿
+# Start loop mining
 bitcoin-cli -generate loop 1 1000
 
-# 或者使用批处理文件
+# Or use the batch file
 test_mining_loop.bat
 ```
 
-## 功能特点
+## Capabilities
 
-### 1. 自动循环
-- 挖矿过程会自动循环进行
-- 每次成功生成区块后会立即开始下一次挖矿
-- 无需手动重复执行命令
+### 1. Automatic looping
+- Mining automatically iterates
+- Starts the next iteration immediately after each success
+- No need to re-run commands manually
 
-### 2. 实时反馈
-- 显示每次迭代的进度
-- 显示生成的区块数量
-- 显示挖矿地址信息
+### 2. Real-time feedback
+- Shows iteration progress
+- Shows number of blocks generated
+- Shows mining address info
 
-### 3. 错误处理
-- 自动处理挖矿过程中的错误
-- 在出错时停止循环并显示错误信息
-- 支持优雅退出（Ctrl+C）
+### 3. Error handling
+- Automatically handles mining errors
+- Stops and reports errors on failure
+- Graceful exit support (Ctrl+C)
 
-### 4. 性能优化
-- 在每次迭代之间添加小延迟，防止系统过载
-- 使用现有的 RPC 接口，保持兼容性
+### 4. Performance
+- Small delay between iterations to avoid overload
+- Uses existing RPCs for compatibility
 
-## 使用场景
+## Use cases
 
-### 1. 开发测试
-- 快速生成测试区块
-- 验证区块链功能
-- 测试挖矿奖励机制
+### 1. Development testing
+- Quickly generate test blocks
+- Verify blockchain functionality
+- Test mining rewards
 
-### 2. 私有网络
-- 维护私有区块链
-- 持续生成新区块
-- 保持网络活跃
+### 2. Private networks
+- Maintain a private chain
+- Continuously generate blocks
+- Keep the network active
 
-### 3. 教学演示
-- 演示挖矿过程
-- 展示区块链增长
-- 教学区块链概念
+### 3. Education and demos
+- Demonstrate mining
+- Show chain growth
+- Teach blockchain concepts
 
-## 注意事项
+## Notes
 
-### 1. 系统要求
-- 确保比特币节点正在运行
-- 确保钱包已解锁
-- 确保有足够的计算资源
+### 1. System requirements
+- Ensure the node is running
+- Ensure the wallet is unlocked
+- Ensure sufficient compute resources
 
-### 2. 安全考虑
-- 循环挖矿会持续消耗系统资源
-- 建议在测试环境中使用
-- 生产环境请谨慎使用
+### 2. Safety considerations
+- Loop mining continuously consumes resources
+- Recommended for test environments
+- Use with caution in production
 
-### 3. 停止方法
-- 按 `Ctrl+C` 停止挖矿
-- 挖矿会在当前区块完成后停止
-- 不会中断正在进行的挖矿过程
+### 3. Stopping
+- Press `Ctrl+C` to stop
+- Mining stops after the current block completes
+- Does not interrupt an in-flight attempt
 
-## 技术实现
+## Technical details
 
-### 1. 修改的文件
-- `src/bitcoin-cli.cpp`: 主要修改文件
-- 添加了循环挖矿逻辑
-- 修改了参数处理函数
+### 1. Modified files
+- `src/bitcoin-cli.cpp`: primary changes
+- Added loop mining logic
+- Updated argument parsing
 
-### 2. 新增功能
-- 循环挖矿检测
-- 自动参数调整
-- 持续挖矿循环
+### 2. New functionality
+- Loop mining detection
+- Automatic parameter adjustment
+- Continuous mining loop
 
-### 3. 兼容性
-- 保持原有 `-generate` 功能不变
-- 向后兼容现有脚本
-- 不影响其他 CLI 功能
+### 3. Compatibility
+- Preserves original `-generate` behavior
+- Backward compatible with scripts
+- No impact on other CLI features
 
-## 故障排除
+## Troubleshooting
 
-### 1. 常见问题
-- **连接失败**: 检查比特币节点是否运行
-- **权限错误**: 确保钱包已解锁
-- **参数错误**: 检查命令语法
+### 1. Common issues
+- **Connection failure**: ensure the node is running
+- **Permission error**: ensure the wallet is unlocked
+- **Argument error**: check command syntax
 
-### 2. 调试方法
-- 使用 `bitcoin-cli getblockchaininfo` 检查节点状态
-- 使用 `bitcoin-cli getwalletinfo` 检查钱包状态
-- 查看控制台输出获取错误信息
+### 2. Debugging
+- Use `bitcoin-cli getblockchaininfo` to check node state
+- Use `bitcoin-cli getwalletinfo` to check wallet state
+- Check console output for errors
 
-## 更新日志
+## Changelog
 
 ### v1.0.0
-- 添加循环挖矿功能
-- 支持自定义区块数量和尝试次数
-- 添加错误处理和用户反馈
-- 创建测试脚本和文档
+- Added loop mining
+- Support custom block counts and max tries
+- Added error handling and feedback
+- Created test script and docs
 
-## 贡献
+## Contributing
 
-如果你发现任何问题或有改进建议，请：
-1. 检查现有问题报告
-2. 创建新的问题报告
-3. 提交代码改进
+If you find issues or have suggestions:
+1. Check existing issues
+2. Create a new issue
+3. Submit improvements
 
-## 许可证
+## License
 
-本项目遵循 MIT 许可证。详见 LICENSE 文件。
+This project is licensed under MIT. See LICENSE.
