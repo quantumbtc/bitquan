@@ -23,18 +23,6 @@
 #include <util/strencodings.h>
 #include <util/time.h>
 #include <util/translation.h>
-#include <primitives/block.h>
-#include <streams.h>
-#include <serialize.h>
-#include <span.h>
-#include <arith_uint256.h>
-#include <uint256.h>
-#include <crypto/randomq_mining.h>
-#include <cstring>
-#include <consensus/merkle.h>
-#ifdef WIN32
-#include <windows.h>
-#endif
 
 #include <algorithm>
 #include <chrono>
@@ -1228,268 +1216,6 @@ static UniValue GetNewAddress()
     return ConnectAndCallRPC(&rh, "getnewaddress", /* args=*/{}, RpcWalletName(gArgs));
 }
 
-static UniValue SimpleRPC(const std::string& method, const std::vector<std::string>& args)
-{
-    DefaultRequestHandler rh;
-    return ConnectAndCallRPC(&rh, method, args, RpcWalletName(gArgs));
-}
-
-static void MineLocally(const std::string& address, std::optional<int> nblocks_opt, std::optional<uint64_t> maxtries_opt)
-{
-    const uint64_t report_interval_secs = 10;
-    const bool continuous = !nblocks_opt.has_value();
-    int remaining = continuous ? 1 : nblocks_opt.value();
-    while (continuous || remaining > 0) {
-        const UniValue reply = SimpleRPC("getminingwork", {address});
-        const UniValue& error = reply.find_value("error");
-        if (!error.isNull()) throw std::runtime_error(error.write());
-        const UniValue& res = reply.find_value("result");
-        CBlock block;
-        std::vector<unsigned char> data_uc = ParseHex(res["block"].get_str());
-        if (data_uc.empty()) throw std::runtime_error("getminingwork returned invalid hex");
-        std::vector<std::byte> data;
-        data.resize(data_uc.size());
-        std::memcpy(data.data(), data_uc.data(), data_uc.size());
-        SpanReader{data} >> TX_WITH_WITNESS(block);
-        // Parse pow limit from RPC to avoid needing Params() in CLI
-        const std::string pow_limit_hex = res["pow_limit"].get_str();
-        const auto pow_limit_opt = uint256::FromHex(pow_limit_hex);
-        if (!pow_limit_opt.has_value()) {
-            throw std::runtime_error("Invalid pow_limit hex string: " + pow_limit_hex);
-        }
-        const uint256 pow_limit = pow_limit_opt.value();
-
-        // Print block header information before mining
-        tfm::format(std::cout, "[CLI Mining] Starting mining on block template:\n");
-        tfm::format(std::cout, "  Hash: %s\n", block.GetHash().GetHex());
-        tfm::format(std::cout, "  Previous Hash: %s\n", block.hashPrevBlock.GetHex());
-        tfm::format(std::cout, "  Merkle Root: %s\n", block.hashMerkleRoot.GetHex());
-        tfm::format(std::cout, "  Time: %u\n", block.nTime);
-        tfm::format(std::cout, "  Nonce: %u\n", block.nNonce);
-        tfm::format(std::cout, "  Bits: %08x\n", block.nBits);
-        tfm::format(std::cout, "  Transactions: %u\n", (unsigned int)block.vtx.size());
-        tfm::format(std::cout, "  Target: %s\n", pow_limit.GetHex());
-
-        std::atomic<uint64_t> total_hashes{0};
-        const int64_t start_time = GetTime();
-        std::atomic<int64_t> last_time{start_time};
-        std::atomic<uint64_t> last_hashes{0};
-        const uint64_t maxtries = maxtries_opt.value_or(DEFAULT_MAX_TRIES);
-        
-        std::atomic<bool> found{false};
-        std::atomic<bool> stop{false};
-
-        // Use all logical cores for maximum CPU utilization
-        const unsigned int num_threads = std::thread::hardware_concurrency();
-        std::vector<std::thread> workers;
-        workers.reserve(num_threads);
-        
-        tfm::format(std::cout, "[CLI Mining] Starting %u mining threads...\n", num_threads);
-
-        // Per-thread mining with optimized nonce distribution
-        for (unsigned int i = 0; i < num_threads; ++i) {
-            workers.emplace_back([&, i]() {
-                // Set thread priority to high for better CPU utilization
-                #ifdef WIN32
-                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-                // Set CPU affinity for better cache performance
-                DWORD_PTR mask = 1ULL << (i % 64); // Support up to 64 cores
-                SetThreadAffinityMask(GetCurrentThread(), mask);
-                #endif
-                
-                CBlock local_block = block;
-                // Large nonce offset per thread to avoid overlap
-                local_block.nNonce = local_block.nNonce + i * 0x100000000ULL; // 4 billion offset per thread
-                
-                // Local counters to reduce atomic operations
-                uint64_t local_hashes = 0;
-                const uint64_t report_batch = 1000; // Report every 1k hashes for better real-time stats
-                
-                // Simplified mining loop for better debugging
-                const uint64_t check_interval = 1000; // Check stop condition every 1k iterations
-                
-                if (!continuous) {
-                    uint64_t tries = 0;
-                    while (tries < maxtries && !stop.load(std::memory_order_relaxed)) {
-                        // Simple inner loop
-                        for (uint64_t j = 0; j < check_interval && tries < maxtries; ++j) {
-                            bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
-                            local_hashes++;
-                            tries++;
-                            
-                            if (mined) {
-                                // Double-check with the same hash calculation used in FindRandomQNonce
-                                uint256 hash = RandomQMining::CalculateRandomQHashOptimized(local_block, local_block.nNonce);
-                                arith_uint256 target;
-                                bool fNegative, fOverflow;
-                                target.SetCompact(local_block.nBits, &fNegative, &fOverflow);
-                                
-                                if (!fNegative && target != 0 && !fOverflow && target <= UintToArith256(pow_limit) && UintToArith256(hash) <= target) {
-                                    // Recalculate merkle root before submitting
-                                    local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
-                                    
-                                    // Add remaining local hashes
-                                    if (local_hashes > 0) {
-                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                                    }
-                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                        block = local_block;
-                                        stop.store(true, std::memory_order_release);
-                                    }
-                                    return;
-                                }
-                            }
-                            local_block.nNonce += 1;
-                        }
-                        
-                        // Batch update global counter to reduce contention
-                        if (local_hashes >= report_batch) {
-                            total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                            local_hashes = 0;
-                        }
-                        
-                        // Update time less frequently to reduce overhead
-                        if (tries % 100000 == 0) {
-                            local_block.nTime = GetTime();
-                        }
-                    }
-                    // Add remaining local hashes
-                    if (local_hashes > 0) {
-                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                    }
-                } else {
-                    uint64_t tries = 0;
-                    while (!stop.load(std::memory_order_relaxed)) {
-                        // Simple inner loop
-                        for (uint64_t j = 0; j < check_interval; ++j) {
-                            bool mined = RandomQMining::FindRandomQNonce(local_block, local_block.nBits, pow_limit);
-                            local_hashes++;
-                            tries++;
-                            
-                            if (mined) {
-                                // Double-check with the same hash calculation used in FindRandomQNonce
-                                uint256 hash = RandomQMining::CalculateRandomQHashOptimized(local_block, local_block.nNonce);
-                                arith_uint256 target;
-                                bool fNegative, fOverflow;
-                                target.SetCompact(local_block.nBits, &fNegative, &fOverflow);
-                                
-                                if (!fNegative && target != 0 && !fOverflow && target <= UintToArith256(pow_limit) && UintToArith256(hash) <= target) {
-                                    // Recalculate merkle root before submitting
-                                    local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
-                                    
-                                    // Add remaining local hashes
-                                    if (local_hashes > 0) {
-                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                                    }
-                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                        block = local_block;
-                                        stop.store(true, std::memory_order_release);
-                                    }
-                                    return;
-                                }
-                            }
-                            local_block.nNonce += 1;
-                        }
-                        
-                        // Batch update global counter to reduce contention
-                        if (local_hashes >= report_batch) {
-                            total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                            local_hashes = 0;
-                        }
-                        
-                        // Update time less frequently to reduce overhead
-                        if (tries % 100000 == 0) {
-                            local_block.nTime = GetTime();
-                        }
-                    }
-                    // Add remaining local hashes
-                    if (local_hashes > 0) {
-                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                    }
-                }
-            });
-        }
-
-        // Reporter thread with better synchronization and smoothing
-        std::thread reporter([&]() {
-            int64_t last_report_time = start_time;
-            uint64_t last_report_hashes = 0;
-            double smoothed_rate = 0.0;
-            const double smoothing_factor = 0.3; // Exponential smoothing factor
-            
-            while (!stop.load(std::memory_order_relaxed)) {
-                std::this_thread::sleep_for(std::chrono::seconds(report_interval_secs));
-                
-                const int64_t now = GetTime();
-                const uint64_t th = total_hashes.load(std::memory_order_relaxed);
-                
-                // Calculate rates based on last report
-                const uint64_t dh = th - last_report_hashes;
-                const int64_t dt = now - last_report_time;
-                
-                if (dt > 0) {
-                    const double current_rate = (double)dh / dt;
-                    const double avg = (now - start_time) ? (double)th / (now - start_time) : 0.0;
-                    
-                    // Apply exponential smoothing to reduce fluctuations
-                    if (smoothed_rate == 0.0) {
-                        smoothed_rate = current_rate;
-                    } else {
-                        smoothed_rate = smoothing_factor * current_rate + (1.0 - smoothing_factor) * smoothed_rate;
-                    }
-                    
-                    tfm::format(std::cout, "[CLI Mining] Threads: %u | Current: %.2f H/s | Smoothed: %.2f H/s | Average: %.2f H/s | This Round: %u hashes over %lld s\n", 
-                               num_threads, current_rate, smoothed_rate, avg, dh, (long long)dt);
-                }
-                
-                last_report_time = now;
-                last_report_hashes = th;
-            }
-        });
-
-        // Join workers
-        for (auto& t : workers) t.join();
-        stop.store(true, std::memory_order_release);
-        if (reporter.joinable()) reporter.join();
-
-        if (!found.load(std::memory_order_relaxed)) {
-            tfm::format(std::cout, "[CLI Mining] No solution found within maxtries=%u across %u threads\n", maxtries, num_threads);
-            if (!continuous) break;
-            continue;
-        }
-
-        DataStream ser;
-        ser << TX_WITH_WITNESS(block);
-        const std::string block_hex = HexStr(ser);
-        
-        // Print block header information
-        tfm::format(std::cout, "[CLI Mining] Block found!\n");
-        tfm::format(std::cout, "  Hash: %s\n", block.GetHash().GetHex());
-        tfm::format(std::cout, "  Previous Hash: %s\n", block.hashPrevBlock.GetHex());
-        tfm::format(std::cout, "  Merkle Root: %s\n", block.hashMerkleRoot.GetHex());
-        tfm::format(std::cout, "  Time: %u\n", block.nTime);
-        tfm::format(std::cout, "  Nonce: %u\n", block.nNonce);
-        tfm::format(std::cout, "  Bits: %08x\n", block.nBits);
-        tfm::format(std::cout, "  Transactions: %u\n", (unsigned int)block.vtx.size());
-        
-        tfm::format(std::cout, "[CLI Mining] Submitting block: %s\n", block.GetHash().GetHex());
-        const UniValue sub = SimpleRPC("submitblock", {block_hex});
-        const UniValue& suberr = sub.find_value("error");
-        const UniValue& result = sub.find_value("result");
-        
-        if (!suberr.isNull()) {
-            tfm::format(std::cerr, "[CLI Mining] submitblock error: %s\n", suberr.write());
-        } else if (!result.isNull() && result.get_str() != "null") {
-            tfm::format(std::cout, "[CLI Mining] Block submission result: %s\n", result.get_str());
-        } else {
-            tfm::format(std::cout, "[CLI Mining] Block successfully submitted: %s\n", block.GetHash().GetHex());
-        }
-        if (!continuous) {
-            remaining--;
-        }
-    }
-}
-
 /**
  * Check bounds and set up args for RPC generatetoaddress params: nblocks, address, maxtries.
  * @param[in] address  Reference to const string address to insert into the args.
@@ -1663,21 +1389,18 @@ static int CommandLineRPC(int argc, char *argv[])
             const UniValue& error{getnewaddress.find_value("error")};
             if (error.isNull()) {
                 std::string address = getnewaddress.find_value("result").get_str();
-
-                // Parse args: [-generate] [N|maxtries] or [loop N maxtries]
-                bool loop = !args.empty() && args.at(0) == "loop";
-                std::optional<int> nblocks;
-                std::optional<uint64_t> maxtries;
-                if (loop) {
-                    if (args.size() > 1) nblocks = ToIntegral<int>(args[1]).value_or(1);
-                    if (args.size() > 2) maxtries = ToIntegral<uint64_t>(args[2]).value_or(DEFAULT_MAX_TRIES);
-                    MineLocally(address, nblocks, maxtries); // continuous: MineLocally ignores remaining when nblocks unset? handled as value_or(1)
-                    return 0;
+                
+                // Check if this is a loop mining request BEFORE calling SetGenerateToAddressArgs
+                bool is_loop = !args.empty() && args.at(0) == "loop";
+                
+                if (is_loop) {
+                    // For loop mining, handle it directly here
+                    StartLoopMining(address, args);
+                    return 0; // Exit after starting loop mining
                 } else {
-                    if (args.size() > 0) nblocks = ToIntegral<int>(args[0]).value_or(1);
-                    if (args.size() > 1) maxtries = ToIntegral<uint64_t>(args[1]).value_or(DEFAULT_MAX_TRIES);
-                    MineLocally(address, nblocks, maxtries);
-                    return 0;
+                    // For normal mining, set up the arguments
+                    SetGenerateToAddressArgs(address, args);
+                    rh.reset(new GenerateToAddressRequestHandler());
                 }
             } else {
                 ParseError(error, strPrint, nRet);

@@ -265,15 +265,15 @@ static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, u
     // 使用找到的区块
     if (g_mining_found.load()) {
         block = g_found_block;
-    block_out = std::make_shared<const CBlock>(std::move(block));
+        block_out = std::make_shared<const CBlock>(std::move(block));
 
-    if (!process_new_block) return true;
+        if (!process_new_block) return true;
 
-    if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
-    }
+        if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+        }
 
-    return true;
+        return true;
     }
 
     return false;
@@ -615,63 +615,6 @@ static RPCHelpMan stopmining()
     }
     
     return result;
-},
-    };
-}
-
-// Provide a fully assembled block (with coinbase) for external miners to work on
-static RPCHelpMan getminingwork()
-{
-    return RPCHelpMan{"getminingwork",
-        "Create a full block template ready to mine locally (coinbase included). Returns the block hex and bits.",
-        {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated coinbase to."},
-        },
-        RPCResult{
-            RPCResult::Type::OBJ, "", "work package",
-            {
-                {RPCResult::Type::STR_HEX, "block", "full block (with transactions) serialized as hex"},
-                {RPCResult::Type::STR_HEX, "bits", "nBits as 8-hex"},
-                {RPCResult::Type::STR_HEX, "previousblockhash", "prev block hash"},
-                {RPCResult::Type::NUM, "height", "next height"},
-            }
-        },
-        RPCExamples{
-            "\nGet mining work for local miner\n" + HelpExampleCli("getminingwork", "\"myaddress\"")
-        },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    const std::string address{request.params[0].get_str()};
-
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    Mining& miner = EnsureMining(node);
-    ChainstateManager& chainman = EnsureChainman(node);
-
-    // Build coinbase script
-    CScript coinbase_output_script;
-    std::string error;
-    if (!getScriptFromAddress(address, coinbase_output_script, error)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
-    }
-
-    std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script }));
-    CHECK_NONFATAL(block_template);
-    CBlock block = block_template->getBlock();
-    
-    // Ensure merkle root is calculated correctly
-    block.hashMerkleRoot = BlockMerkleRoot(block);
-
-    // Serialize block to hex
-    DataStream ss;
-    ss << TX_WITH_WITNESS(block);
-
-    UniValue obj(UniValue::VOBJ);
-    obj.pushKV("block", HexStr(ss));
-    obj.pushKV("bits", strprintf("%08x", block.nBits));
-    obj.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
-    obj.pushKV("height", (int64_t)(WITH_LOCK(cs_main, return chainman.ActiveChain().Height() + 1)));
-    obj.pushKV("pow_limit", chainman.GetParams().GetConsensus().powLimit.GetHex());
-    return obj;
 },
     };
 }
@@ -1587,7 +1530,6 @@ void RegisterMiningRPCCommands(CRPCTable& t)
         {"mining", &generate},
         {"mining", &stopmining},
         {"mining", &getminingstatus},
-        {"mining", &getminingwork},
 
         {"hidden", &generatetoaddress},
         {"hidden", &generatetodescriptor},

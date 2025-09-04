@@ -138,15 +138,17 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
 
 // Bypasses the actual proof of work check during fuzz testing with a simplified validation checking whether
 // the most significant bit of the last byte of the hash is set.
-
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)
+{
+    if (EnableFuzzDeterminism()) return (hash.data()[31] & 0x80) == 0;
+    return CheckProofOfWorkImpl(hash, nBits, params);
+}
 
 // CheckProofOfWork with CBlockHeader parameter - supports both SHA256 and RandomQ algorithms
 bool CheckProofOfWork(const CBlockHeader& block, unsigned int nBits, const Consensus::Params& params)
 {
     if (EnableFuzzDeterminism()) return (block.GetHash().data()[31] & 0x80) == 0;
-
-    auto bnTarget{DeriveTarget(nBits, params.powLimit)};
-    if (!bnTarget) return false;
+    
     // Use RandomQ algorithm for proof of work checking
     return RandomQMining::CheckRandomQProofOfWork(block, nBits, params.powLimit);
 }
