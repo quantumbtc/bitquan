@@ -1317,19 +1317,27 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             local_hashes++;
                             tries++;
                             
-                            if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
-                                // Recalculate merkle root before submitting
-                                local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                            if (mined) {
+                                // Double-check with the same hash calculation used in FindRandomQNonce
+                                uint256 hash = RandomQMining::CalculateRandomQHashOptimized(local_block, local_block.nNonce);
+                                arith_uint256 target;
+                                bool fNegative, fOverflow;
+                                target.SetCompact(local_block.nBits, &fNegative, &fOverflow);
                                 
-                                // Add remaining local hashes
-                                if (local_hashes > 0) {
-                                    total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                                if (!fNegative && target != 0 && !fOverflow && target <= UintToArith256(pow_limit) && UintToArith256(hash) <= target) {
+                                    // Recalculate merkle root before submitting
+                                    local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                                    
+                                    // Add remaining local hashes
+                                    if (local_hashes > 0) {
+                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                                    }
+                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                        block = local_block;
+                                        stop.store(true, std::memory_order_release);
+                                    }
+                                    return;
                                 }
-                                if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                    block = local_block;
-                                    stop.store(true, std::memory_order_release);
-                                }
-                                return;
                             }
                             local_block.nNonce += 1;
                         }
@@ -1358,19 +1366,27 @@ static void MineLocally(const std::string& address, std::optional<int> nblocks_o
                             local_hashes++;
                             tries++;
                             
-                            if (mined && RandomQMining::CheckRandomQProofOfWork(local_block, local_block.nBits, pow_limit)) {
-                                // Recalculate merkle root before submitting
-                                local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                            if (mined) {
+                                // Double-check with the same hash calculation used in FindRandomQNonce
+                                uint256 hash = RandomQMining::CalculateRandomQHashOptimized(local_block, local_block.nNonce);
+                                arith_uint256 target;
+                                bool fNegative, fOverflow;
+                                target.SetCompact(local_block.nBits, &fNegative, &fOverflow);
                                 
-                                // Add remaining local hashes
-                                if (local_hashes > 0) {
-                                    total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                                if (!fNegative && target != 0 && !fOverflow && target <= UintToArith256(pow_limit) && UintToArith256(hash) <= target) {
+                                    // Recalculate merkle root before submitting
+                                    local_block.hashMerkleRoot = BlockMerkleRoot(local_block);
+                                    
+                                    // Add remaining local hashes
+                                    if (local_hashes > 0) {
+                                        total_hashes.fetch_add(local_hashes, std::memory_order_relaxed);
+                                    }
+                                    if (!found.exchange(true, std::memory_order_acq_rel)) {
+                                        block = local_block;
+                                        stop.store(true, std::memory_order_release);
+                                    }
+                                    return;
                                 }
-                                if (!found.exchange(true, std::memory_order_acq_rel)) {
-                                    block = local_block;
-                                    stop.store(true, std::memory_order_release);
-                                }
-                                return;
                             }
                             local_block.nNonce += 1;
                         }
