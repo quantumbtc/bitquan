@@ -1,9 +1,9 @@
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_KERNEL_MEMPOOL_ENTRY_H
-#define BITCOIN_KERNEL_MEMPOOL_ENTRY_H
+#ifndef BITQUANTUM_KERNEL_MEMPOOL_ENTRY_H
+#define BITQUANTUM_KERNEL_MEMPOOL_ENTRY_H
 
 #include <consensus/amount.h>
 #include <consensus/validation.h>
@@ -249,4 +249,4 @@ struct NewMempoolTransactionInfo {
           m_has_no_mempool_parents{has_no_mempool_parents} {}
 };
 
-#endif // BITCOIN_KERNEL_MEMPOOL_ENTRY_H
+#endif // BITQUANTUM_KERNEL_MEMPOOL_ENTRY_H

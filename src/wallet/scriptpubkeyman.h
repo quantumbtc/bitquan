@@ -1,9 +1,9 @@
-// Copyright (c) 2019-present The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_WALLET_SCRIPTPUBKEYMAN_H
-#define BITCOIN_WALLET_SCRIPTPUBKEYMAN_H
+#ifndef BITQUANTUM_WALLET_SCRIPTPUBKEYMAN_H
+#define BITQUANTUM_WALLET_SCRIPTPUBKEYMAN_H
 
 #include <addresstype.h>
 #include <common/messages.h>
@@ -406,4 +406,4 @@ struct MigrationData
 
 } // namespace wallet
 
-#endif // BITCOIN_WALLET_SCRIPTPUBKEYMAN_H
+#endif // BITQUANTUM_WALLET_SCRIPTPUBKEYMAN_H

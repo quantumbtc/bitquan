@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022 The Bitcoin Core developers
+# Copyright (c) 2022 The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 import os
@@ -9,12 +9,12 @@ import tempfile
 import argparse
 
 BINARIES = [
-'bin/bitcoind',
-'bin/bitcoin-cli',
-'bin/bitcoin-tx',
-'bin/bitcoin-wallet',
-'bin/bitcoin-util',
-'bin/bitcoin-qt',
+'bin/bitquantumd',
+'bin/bitquantum-cli',
+'bin/bitquantum-tx',
+'bin/bitquantum-wallet',
+'bin/bitquantum-util',
+'bin/bitquantum-qt',
 ]
 
 parser = argparse.ArgumentParser(

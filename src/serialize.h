@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SERIALIZE_H
-#define BITCOIN_SERIALIZE_H
+#ifndef BITQUANTUM_SERIALIZE_H
+#define BITQUANTUM_SERIALIZE_H
 
 #include <attributes.h>
 #include <compat/assumptions.h> // IWYU pragma: keep
@@ -1220,4 +1220,4 @@ public:
         return ParamsWrapper{*this, t};                                                  \
     }
 
-#endif // BITCOIN_SERIALIZE_H
+#endif // BITQUANTUM_SERIALIZE_H

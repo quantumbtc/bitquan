@@ -1,11 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Copyright (c) 2017 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_KEY_H
-#define BITCOIN_KEY_H
+#ifndef BITQUANTUM_KEY_H
+#define BITQUANTUM_KEY_H
 
 #include <pubkey.h>
 #include <serialize.h>
@@ -325,4 +325,4 @@ public:
     ~ECC_Context();
 };
 
-#endif // BITCOIN_KEY_H
+#endif // BITQUANTUM_KEY_H

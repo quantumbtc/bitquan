@@ -1,10 +1,10 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_RPC_SERVER_H
-#define BITCOIN_RPC_SERVER_H
+#ifndef BITQUANTUM_RPC_SERVER_H
+#define BITQUANTUM_RPC_SERVER_H
 
 #include <rpc/request.h>
 #include <rpc/util.h>
@@ -135,4 +135,4 @@ void InterruptRPC();
 void StopRPC();
 UniValue JSONRPCExec(const JSONRPCRequest& jreq, bool catch_errors);
 
-#endif // BITCOIN_RPC_SERVER_H
+#endif // BITQUANTUM_RPC_SERVER_H

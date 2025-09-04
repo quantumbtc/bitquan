@@ -1,9 +1,9 @@
-// Copyright (c) 2024 The Bitcoin Core developers
+// Copyright (c) 2024 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_COMMON_NETIF_H
-#define BITCOIN_COMMON_NETIF_H
+#ifndef BITQUANTUM_COMMON_NETIF_H
+#define BITQUANTUM_COMMON_NETIF_H
 
 #include <netaddress.h>
 
@@ -16,4 +16,4 @@ std::optional<CNetAddr> QueryDefaultGateway(Network network);
 //! Return all local non-loopback IPv4 and IPv6 network addresses.
 std::vector<CNetAddr> GetLocalAddresses();
 
-#endif // BITCOIN_COMMON_NETIF_H
+#endif // BITQUANTUM_COMMON_NETIF_H

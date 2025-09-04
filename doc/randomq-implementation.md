@@ -1,6 +1,6 @@
 # RandomQ Post-Quantum Algorithm Implementation
 
-This document describes the RandomQ post-quantum algorithm implemented in Bitcoin Core, replacing the traditional SHA256D proof-of-work algorithm.
+This document describes the RandomQ post-quantum algorithm implemented in Bitquantum Core, replacing the traditional SHA256D proof-of-work algorithm.
 
 ## Overview
 
@@ -10,7 +10,7 @@ RandomQ is an improved variant of a Monero-inspired post-quantum algorithm, impl
 Block header -> SHA256 -> RandomQ -> SHA256 -> Final hash
 ```
 
-This design provides post-quantum resistance while staying compatible with the existing Bitcoin protocol.
+This design provides post-quantum resistance while staying compatible with the existing Bitquantum protocol.
 
 ## Algorithm Features
 
@@ -20,7 +20,7 @@ This design provides post-quantum resistance while staying compatible with the e
 - Uses a 200-byte internal state and 8192 rounds
 
 ### 2. Compatibility
-- No changes to the Bitcoin protocol
+- No changes to the Bitquantum protocol
 - Preserves the existing block header structure
 - Compatible with existing mining software interfaces
 
@@ -53,7 +53,7 @@ This design provides post-quantum resistance while staying compatible with the e
 - `src/primitives/block.cpp` – update block header hash
 - `src/rpc/mining.cpp` – update mining logic
 - `src/test/util/mining.cpp` – update test mining code
-- `src/bitcoin-util.cpp` – update mining tool
+- `src/bitquantum-util.cpp` – update mining tool
 - `src/crypto/CMakeLists.txt` – add new sources
 
 ## Usage
@@ -131,7 +131,7 @@ Run RandomQ tests:
 ```bash
 make check
 # Or run a specific test
-src/test/test_bitcoin --run_test=randomq_tests
+src/test/test_bitquantum --run_test=randomq_tests
 ```
 
 Coverage:

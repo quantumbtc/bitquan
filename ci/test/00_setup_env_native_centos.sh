@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2020-present The Bitcoin Core developers
+# Copyright (c) 2020-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,10 +12,10 @@ export CI_BASE_PACKAGES="gcc-c++ glibc-devel libstdc++-devel ccache make ninja-b
 export PIP_PACKAGES="pyzmq"
 export DEP_OPTS="DEBUG=1"
 export GOAL="install"
-export BITCOIN_CONFIG="\
+export BITQUANTUM_CONFIG="\
  -DWITH_ZMQ=ON \
  -DBUILD_GUI=ON \
  -DREDUCE_EXPORTS=ON \
  -DCMAKE_BUILD_TYPE=Debug \
 "
-export BITCOIN_CMD="bitcoin -m" # Used in functional tests
+export BITQUANTUM_CMD="bitquantum -m" # Used in functional tests

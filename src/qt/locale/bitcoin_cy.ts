@@ -58,13 +58,13 @@
         <translation type="unfinished">D&amp;ewis</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation type="unfinished">Rhain ydi eich cyfeiriadau Bitcoin ar gyfer gyrru taliadau. Gwnewch yn sicr o'r swm a'r cyfeiriad derbyn cyn gyrru arian.</translation>
+        <source>These are your Bitquantum addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation type="unfinished">Rhain ydi eich cyfeiriadau Bitquantum ar gyfer gyrru taliadau. Gwnewch yn sicr o'r swm a'r cyfeiriad derbyn cyn gyrru arian.</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.
+        <source>These are your Bitquantum addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.
 Signing is only possible with addresses of the type 'legacy'.</source>
-        <translation type="unfinished">Dyma'ch cyfeiriadau Bitcoin ar gyfer derbyn taliadau. Defnyddiwch y botwm 'Creu cyfeiriad derbyn newydd' yn y tab derbyn i greu cyfeiriadau newydd. Dim ond gyda chyfeiriadau o'r math 'etifeddol' y mae llofnodi yn bosibl.</translation>
+        <translation type="unfinished">Dyma'ch cyfeiriadau Bitquantum ar gyfer derbyn taliadau. Defnyddiwch y botwm 'Creu cyfeiriad derbyn newydd' yn y tab derbyn i greu cyfeiriadau newydd. Dim ond gyda chyfeiriadau o'r math 'etifeddol' y mae llofnodi yn bosibl.</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -159,8 +159,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Cadarnhau amgryptio'r waled</translation>
     </message>
     <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITCOINS&lt;/b&gt;!</source>
-        <translation type="unfinished">Rhybudd: Os ydych yn amgryptio'r waled ag yn colli'r cyfrinair, byddwch yn &lt;b&gt; COLLI EICH BITCOINS I GYD &lt;b&gt; !</translation>
+        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITQUANTUMS&lt;/b&gt;!</source>
+        <translation type="unfinished">Rhybudd: Os ydych yn amgryptio'r waled ag yn colli'r cyfrinair, byddwch yn &lt;b&gt; COLLI EICH BITQUANTUMS I GYD &lt;b&gt; !</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -187,8 +187,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Yn ôl</translation>
     </message>
     <message>
-        <source>Remember that encrypting your wallet cannot fully protect your bitcoins from being stolen by malware infecting your computer.</source>
-        <translation type="unfinished">Cofiwch nad yw cryptio eich waled yn gallu amddiffyn eich bitcoiniodd yn llawn rhag cael eu dwyn gan feddalwedd ymosodol sy'n heintio eich cyfrifiadur.</translation>
+        <source>Remember that encrypting your wallet cannot fully protect your bitquantums from being stolen by malware infecting your computer.</source>
+        <translation type="unfinished">Cofiwch nad yw cryptio eich waled yn gallu amddiffyn eich bitquantumiodd yn llawn rhag cael eu dwyn gan feddalwedd ymosodol sy'n heintio eich cyfrifiadur.</translation>
     </message>
     <message>
         <source>Wallet to be encrypted</source>
@@ -259,7 +259,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
 </context>
 <context>
-    <name>BitcoinApplication</name>
+    <name>BitquantumApplication</name>
     <message>
         <source>Settings file %1 might be corrupt or invalid.</source>
         <translation type="unfinished">Efallai bod ffeil y gosodiadau %1 yn llwgr neu'n anilys.</translation>
@@ -371,7 +371,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
     </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>BitquantumGUI</name>
     <message>
         <source>&amp;Overview</source>
         <translation type="unfinished">&amp;Trosolwg</translation>
@@ -438,8 +438,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Mae'r procsï yw&lt;b&gt;wedi'i alluog&lt;/b&gt;i:%1</translation>
     </message>
     <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation type="unfinished">Anfon arian i gyfeiriad Bitcoin</translation>
+        <source>Send coins to a Bitquantum address</source>
+        <translation type="unfinished">Anfon arian i gyfeiriad Bitquantum</translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -482,16 +482,16 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Llofnodi &amp;neges…</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation type="unfinished">Arwyddo negeseuon gyda eich cyfeiriadau Bitcoin i brofi mae chi sy'n berchen arnynt</translation>
+        <source>Sign messages with your Bitquantum addresses to prove you own them</source>
+        <translation type="unfinished">Arwyddo negeseuon gyda eich cyfeiriadau Bitquantum i brofi mae chi sy'n berchen arnynt</translation>
     </message>
     <message>
         <source>&amp;Verify message…</source>
         <translation type="unfinished">&amp;Gwirio neges…</translation>
     </message>
     <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation type="unfinished">Gwirio negeseuon i sicrhau eu bod wedi eu harwyddo gyda cyfeiriadau Bitcoin penodol</translation>
+        <source>Verify messages to ensure they were signed with specified Bitquantum addresses</source>
+        <translation type="unfinished">Gwirio negeseuon i sicrhau eu bod wedi eu harwyddo gyda cyfeiriadau Bitquantum penodol</translation>
     </message>
     <message>
         <source>&amp;Load PSBT from file…</source>
@@ -550,8 +550,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Cysylltu â chydweithwyr…</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation type="unfinished">Gofyn taliadau (creu côd QR a bitcoin: URIs)</translation>
+        <source>Request payments (generates QR codes and bitquantum: URIs)</source>
+        <translation type="unfinished">Gofyn taliadau (creu côd QR a bitquantum: URIs)</translation>
     </message>
     <message>
         <source>Show the list of used sending addresses and labels</source>
@@ -608,16 +608,16 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Cyfamserol</translation>
     </message>
     <message>
-        <source>Load Partially Signed Bitcoin Transaction</source>
-        <translation type="unfinished">Llwytho Trafodiad Bitcoin wedi'i Llofnodi'n Rhanol</translation>
+        <source>Load Partially Signed Bitquantum Transaction</source>
+        <translation type="unfinished">Llwytho Trafodiad Bitquantum wedi'i Llofnodi'n Rhanol</translation>
     </message>
     <message>
         <source>Load PSBT from &amp;clipboard…</source>
         <translation type="unfinished">Llwytho PSBT o &amp;glipbwrdd…</translation>
     </message>
     <message>
-        <source>Load Partially Signed Bitcoin Transaction from clipboard</source>
-        <translation type="unfinished">Llwytho Trafodiad Bitcoin wedi'i Llofnodi'n Rhanol o glipbwrdd</translation>
+        <source>Load Partially Signed Bitquantum Transaction from clipboard</source>
+        <translation type="unfinished">Llwytho Trafodiad Bitquantum wedi'i Llofnodi'n Rhanol o glipbwrdd</translation>
     </message>
     <message>
         <source>Node window</source>
@@ -636,8 +636,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">&amp;Derbyn cyfeiriadau</translation>
     </message>
     <message>
-        <source>Open a bitcoin: URI</source>
-        <translation type="unfinished">Agor bitcoin: URI</translation>
+        <source>Open a bitquantum: URI</source>
+        <translation type="unfinished">Agor bitquantum: URI</translation>
     </message>
     <message>
         <source>Open Wallet</source>
@@ -674,8 +674,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Mudo waled</translation>
     </message>
     <message>
-        <source>Show the %1 help message to get a list with possible Bitcoin command-line options</source>
-        <translation type="unfinished">Dangos y%1neges gymorth i gael rhestr gyda'r opsiynau llinell-gorchymyn Bitcoin posibl</translation>
+        <source>Show the %1 help message to get a list with possible Bitquantum command-line options</source>
+        <translation type="unfinished">Dangos y%1neges gymorth i gael rhestr gyda'r opsiynau llinell-gorchymyn Bitquantum posibl</translation>
     </message>
     <message>
         <source>&amp;Mask values</source>
@@ -734,7 +734,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation type="unfinished">Dangos</translation>
     </message>
     <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network.</source>
+        <source>%n active connection(s) to Bitquantum network.</source>
         <extracomment>A substring of the tooltip.</extracomment>
         <translation type="unfinished">
             <numerusform />
@@ -1166,8 +1166,8 @@ Bydd y broses fudo yn creu copi wrth gefn o'r waled cyn mudo. Bydd y ffeil wrth 
         <translation type="unfinished">Golygu'r cyfeiriad anfon</translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Bitcoin address.</source>
-        <translation type="unfinished">Y cyfeiriad a roddwyd "%1Nid yw " yn gyfeiriad Bitcoin dilys.</translation>
+        <source>The entered address "%1" is not a valid Bitquantum address.</source>
+        <translation type="unfinished">Y cyfeiriad a roddwyd "%1Nid yw " yn gyfeiriad Bitquantum dilys.</translation>
     </message>
     <message>
         <source>Address "%1" already exists as a receiving address with label "%2" and so cannot be added as a sending address.</source>
@@ -1261,8 +1261,8 @@ Bydd y broses fudo yn creu copi wrth gefn o'r waled cyn mudo. Bydd y ffeil wrth 
         </translation>
     </message>
     <message>
-        <source>%1 will download and store a copy of the Bitcoin block chain.</source>
-        <translation type="unfinished">%1yn lawrlwytho ac yn storio copi o'r gadwyn bloc Bitcoin.</translation>
+        <source>%1 will download and store a copy of the Bitquantum block chain.</source>
+        <translation type="unfinished">%1yn lawrlwytho ac yn storio copi o'r gadwyn bloc Bitquantum.</translation>
     </message>
     <message>
         <source>The wallet will also be stored in this directory.</source>
@@ -1461,8 +1461,8 @@ Bydd y broses fudo yn creu copi wrth gefn o'r waled cyn mudo. Bydd y ffeil wrth 
         <translation type="unfinished">Caniatáu cysylltiadau sy'n dod i mewn</translation>
     </message>
     <message>
-        <source>Connect to the Bitcoin network through a SOCKS5 proxy.</source>
-        <translation type="unfinished">Cysylltu â rhwydwaith Bitcoin trwy brocsï SOCKS5.</translation>
+        <source>Connect to the Bitquantum network through a SOCKS5 proxy.</source>
+        <translation type="unfinished">Cysylltu â rhwydwaith Bitquantum trwy brocsï SOCKS5.</translation>
     </message>
     <message>
         <source>&amp;Connect through SOCKS5 proxy (default proxy):</source>
@@ -1866,7 +1866,7 @@ Bydd y broses fudo yn creu copi wrth gefn o'r waled cyn mudo. Bydd y ffeil wrth 
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>bitquantum-core</name>
     <message>
         <source>Unable to bind to %s on this computer. %s is probably already running.</source>
         <translation type="unfinished">Methu cysylltu â%sar y cyfrifiadur hwn.%syn debyg eisoes yn rhedeg.</translation>

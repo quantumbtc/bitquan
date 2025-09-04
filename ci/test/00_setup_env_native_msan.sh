@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2020-present The Bitcoin Core developers
+# Copyright (c) 2020-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,7 +20,7 @@ export GOAL="install"
 export CI_LIMIT_STACK_SIZE=1
 # Setting CMAKE_{C,CXX}_FLAGS_DEBUG flags to an empty string ensures that the flags set in MSAN_FLAGS remain unaltered.
 # _FORTIFY_SOURCE is not compatible with MSAN.
-export BITCOIN_CONFIG="\
+export BITQUANTUM_CONFIG="\
  -DCMAKE_BUILD_TYPE=Debug \
  -DCMAKE_C_FLAGS_DEBUG='' \
  -DCMAKE_CXX_FLAGS_DEBUG='' \

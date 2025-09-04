@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2022 The Bitcoin Core developers
+# Copyright (c) 2014-2022 The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the fundrawtransaction RPC."""
@@ -16,7 +16,7 @@ from test_framework.messages import (
     CTransaction,
     CTxOut,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitquantumTestFramework
 from test_framework.util import (
     assert_not_equal,
     assert_approx,
@@ -39,7 +39,7 @@ def get_unspent(listunspent, amount):
             return utx
     raise AssertionError('Could not find unspent with amount={}'.format(amount))
 
-class RawTransactionsTest(BitcoinTestFramework):
+class RawTransactionsTest(BitquantumTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
         self.extra_args = [[
@@ -308,7 +308,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         dec_tx  = self.nodes[2].decoderawtransaction(rawtx)
         assert_equal(utx['txid'], dec_tx['vin'][0]['txid'])
 
-        assert_raises_rpc_error(-5, "Change address must be a valid bitcoin address", self.nodes[2].fundrawtransaction, rawtx, changeAddress='foobar')
+        assert_raises_rpc_error(-5, "Change address must be a valid bitquantum address", self.nodes[2].fundrawtransaction, rawtx, changeAddress='foobar')
 
     def test_valid_change_address(self):
         self.log.info("Test fundrawtxn with a provided change address")
@@ -1454,7 +1454,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         # If rounding up, then the calculated fee will be 126 + 78 = 204.
         # In the former case, the calculated needed fee is higher than the actual fee being paid, so an assertion is reached
         # To test this does not happen, we subtract 202 sats from the input value. If working correctly, this should
-        # fail with insufficient funds rather than bitcoind asserting.
+        # fail with insufficient funds rather than bitquantumd asserting.
         rawtx = w.createrawtransaction(inputs=[], outputs=[{self.nodes[0].getnewaddress(address_type="bech32"): 1 - 0.00000202}])
         assert_raises_rpc_error(-4, "Insufficient funds", w.fundrawtransaction, rawtx, fee_rate=1.85)
 

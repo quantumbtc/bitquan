@@ -2,7 +2,7 @@
 
 ## Completed Work
 
-I implemented a RandomQ-based post-quantum algorithm to replace the current POW in Bitcoin Core. Details below:
+I implemented a RandomQ-based post-quantum algorithm to replace the current POW in Bitquantum Core. Details below:
 
 ### 1. Core Algorithm
 
@@ -35,7 +35,7 @@ I implemented a RandomQ-based post-quantum algorithm to replace the current POW 
 #### Mining system updates
 - Updated `src/rpc/mining.cpp`
 - Updated test mining code in `src/test/util/mining.cpp`
-- Updated mining tooling in `src/bitcoin-util.cpp`
+- Updated mining tooling in `src/bitquantum-util.cpp`
 
 #### Build system
 - Updated `src/crypto/CMakeLists.txt` to add new sources
@@ -70,7 +70,7 @@ I implemented a RandomQ-based post-quantum algorithm to replace the current POW 
 - Large state space and multi-round function
 
 ### Compatibility
-- No Bitcoin protocol changes
+- No Bitquantum protocol changes
 - Same block header structure
 - Compatible with existing mining software
 
@@ -163,7 +163,7 @@ bool valid = RandomQMining::CheckRandomQProofOfWork(
 
 ## Conclusion
 
-RandomQ was implemented and integrated into Bitcoin Core. This work:
+RandomQ was implemented and integrated into Bitquantum Core. This work:
 
 1. **Fully replaces** the existing POW
 2. **Maintains** protocol compatibility

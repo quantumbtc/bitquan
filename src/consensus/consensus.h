@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CONSENSUS_CONSENSUS_H
-#define BITCOIN_CONSENSUS_CONSENSUS_H
+#ifndef BITQUANTUM_CONSENSUS_CONSENSUS_H
+#define BITQUANTUM_CONSENSUS_CONSENSUS_H
 
 #include <cstdint>
 #include <cstdlib>
@@ -34,4 +34,4 @@ static constexpr unsigned int LOCKTIME_VERIFY_SEQUENCE = (1 << 0);
  */
 static constexpr int64_t MAX_TIMEWARP = 600;
 
-#endif // BITCOIN_CONSENSUS_CONSENSUS_H
+#endif // BITQUANTUM_CONSENSUS_CONSENSUS_H

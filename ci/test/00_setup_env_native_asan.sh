@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2019-present The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -24,7 +24,7 @@ export PACKAGES="systemtap-sdt-dev clang-${APT_LLVM_V} llvm-${APT_LLVM_V} libcla
 export NO_DEPENDS=1
 export GOAL="install"
 export CI_LIMIT_STACK_SIZE=1
-export BITCOIN_CONFIG="\
+export BITQUANTUM_CONFIG="\
  -DWITH_USDT=ON -DWITH_ZMQ=ON -DBUILD_GUI=ON \
  -DSANITIZERS=address,float-divide-by-zero,integer,undefined \
  -DCMAKE_C_COMPILER=clang \

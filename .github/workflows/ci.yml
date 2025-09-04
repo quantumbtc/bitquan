@@ -1,4 +1,4 @@
-# Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (c) 2023-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit.
 
@@ -237,14 +237,14 @@ jobs:
         run: |
           cmake --build . -j $NUMBER_OF_PROCESSORS --config Release
 
-      - name: Get bitcoind manifest
+      - name: Get bitquantumd manifest
         if: matrix.job-type == 'standard'
         working-directory: build
         run: |
-          mt.exe -nologo -inputresource:bin/Release/bitcoind.exe -out:bitcoind.manifest
-          cat bitcoind.manifest
+          mt.exe -nologo -inputresource:bin/Release/bitquantumd.exe -out:bitquantumd.manifest
+          cat bitquantumd.manifest
           echo
-          mt.exe -nologo -inputresource:bin/Release/bitcoind.exe -validate_manifest
+          mt.exe -nologo -inputresource:bin/Release/bitquantumd.exe -validate_manifest
 
       - name: Run test suite
         if: matrix.job-type == 'standard'
@@ -258,18 +258,18 @@ jobs:
         if: matrix.job-type == 'standard'
         working-directory: build
         env:
-          BITCOIND: '${{ github.workspace }}\build\bin\Release\bitcoind.exe'
-          BITCOINCLI: '${{ github.workspace }}\build\bin\Release\bitcoin-cli.exe'
-          BITCOINTX: '${{ github.workspace }}\build\bin\Release\bitcoin-tx.exe'
-          BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\bitcoin-util.exe'
-          BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
+          BITQUANTUMD: '${{ github.workspace }}\build\bin\Release\bitquantumd.exe'
+          BITQUANTUMCLI: '${{ github.workspace }}\build\bin\Release\bitquantum-cli.exe'
+          BITQUANTUMTX: '${{ github.workspace }}\build\bin\Release\bitquantum-tx.exe'
+          BITQUANTUMUTIL: '${{ github.workspace }}\build\bin\Release\bitquantum-util.exe'
+          BITQUANTUMWALLET: '${{ github.workspace }}\build\bin\Release\bitquantum-wallet.exe'
           TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
         run: py -3 test/functional/test_runner.py --jobs $NUMBER_OF_PROCESSORS --ci --quiet --tmpdirprefix="${RUNNER_TEMP}" --combinedlogslen=99999999 --timeout-factor=${TEST_RUNNER_TIMEOUT_FACTOR} ${TEST_RUNNER_EXTRA}
 
       - name: Clone corpora
         if: matrix.job-type == 'fuzz'
         run: |
-          git clone --depth=1 https://github.com/bitcoin-core/qa-assets "${RUNNER_TEMP}/qa-assets"
+          git clone --depth=1 https://github.com/bitquantum-core/qa-assets "${RUNNER_TEMP}/qa-assets"
           cd "${RUNNER_TEMP}/qa-assets"
           echo "Using qa-assets repo from commit ..."
           git log -1
@@ -278,7 +278,7 @@ jobs:
         if: matrix.job-type == 'fuzz'
         working-directory: build
         env:
-          BITCOINFUZZ: '${{ github.workspace }}\build\bin\Release\fuzz.exe'
+          BITQUANTUMFUZZ: '${{ github.workspace }}\build\bin\Release\fuzz.exe'
         run: |
           py -3 test/fuzz/test_runner.py --par $NUMBER_OF_PROCESSORS --loglevel DEBUG "${RUNNER_TEMP}/qa-assets/fuzz_corpora"
 
@@ -354,8 +354,8 @@ jobs:
         with:
           name: x86_64-w64-mingw32-executables-${{ github.run_id }}
 
-      - name: Run bitcoind.exe
-        run: ./bin/bitcoind.exe -version
+      - name: Run bitquantumd.exe
+        run: ./bin/bitquantumd.exe -version
 
       - name: Find mt.exe tool
         shell: pwsh
@@ -364,17 +364,17 @@ jobs:
           $sdk_latest = (Get-ChildItem "$sdk_dir\bin" -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } | Sort-Object Name -Descending | Select-Object -First 1).Name
           "MT_EXE=${sdk_dir}bin\${sdk_latest}\x64\mt.exe" >> $env:GITHUB_ENV
 
-      - name: Get bitcoind manifest
+      - name: Get bitquantumd manifest
         shell: pwsh
         run: |
-          & $env:MT_EXE -nologo -inputresource:bin\bitcoind.exe -out:bitcoind.manifest
-          Get-Content bitcoind.manifest
-          & $env:MT_EXE -nologo -inputresource:bin\bitcoind.exe -validate_manifest
+          & $env:MT_EXE -nologo -inputresource:bin\bitquantumd.exe -out:bitquantumd.manifest
+          Get-Content bitquantumd.manifest
+          & $env:MT_EXE -nologo -inputresource:bin\bitquantumd.exe -validate_manifest
 
       - name: Run unit tests
         # Can't use ctest here like other jobs as we don't have a CMake build tree.
         run: |
-          ./bin/test_bitcoin.exe -l test_suite
+          ./bin/test_bitquantum.exe -l test_suite
           ./src/secp256k1/bin/exhaustive_tests.exe
           ./src/secp256k1/bin/noverify_tests.exe
           ./src/secp256k1/bin/tests.exe
@@ -382,7 +382,7 @@ jobs:
           ./src/univalue/unitester.exe
 
       - name: Run benchmarks
-        run: ./bin/bench_bitcoin.exe -sanity-check
+        run: ./bin/bench_bitquantum.exe -sanity-check
 
       - name: Adjust paths in test/config.ini
         shell: pwsh

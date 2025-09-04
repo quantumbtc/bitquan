@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_MINER_H
-#define BITCOIN_NODE_MINER_H
+#ifndef BITQUANTUM_NODE_MINER_H
+#define BITQUANTUM_NODE_MINER_H
 
 #include <interfaces/types.h>
 #include <node/types.h>
@@ -257,4 +257,4 @@ std::optional<BlockRef> GetTip(ChainstateManager& chainman);
 std::optional<BlockRef> WaitTipChanged(ChainstateManager& chainman, KernelNotifications& kernel_notifications, const uint256& current_tip, MillisecondsDouble& timeout);
 } // namespace node
 
-#endif // BITCOIN_NODE_MINER_H
+#endif // BITQUANTUM_NODE_MINER_H

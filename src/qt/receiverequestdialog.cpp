@@ -1,11 +1,11 @@
-// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/receiverequestdialog.h>
 #include <qt/forms/ui_receiverequestdialog.h>
 
-#include <qt/bitcoinunits.h>
+#include <qt/bitquantumunits.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/qrimagewidget.h>
@@ -14,7 +14,7 @@
 #include <QDialog>
 #include <QString>
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <bitquantum-build-config.h> // IWYU pragma: keep
 
 ReceiveRequestDialog::ReceiveRequestDialog(QWidget* parent)
     : QDialog(parent, GUIUtil::dialog_flags),
@@ -44,7 +44,7 @@ void ReceiveRequestDialog::setInfo(const SendCoinsRecipient &_info)
 {
     this->info = _info;
     setWindowTitle(tr("Request payment to %1").arg(info.label.isEmpty() ? info.address : info.label));
-    QString uri = GUIUtil::formatBitcoinURI(info);
+    QString uri = GUIUtil::formatBitquantumURI(info);
 
 #ifdef USE_QRCODE
     if (ui->qr_code->setQR(uri, info.address)) {
@@ -97,12 +97,12 @@ void ReceiveRequestDialog::setInfo(const SendCoinsRecipient &_info)
 void ReceiveRequestDialog::updateDisplayUnit()
 {
     if (!model) return;
-    ui->amount_content->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), info.amount));
+    ui->amount_content->setText(BitquantumUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), info.amount));
 }
 
 void ReceiveRequestDialog::on_btnCopyURI_clicked()
 {
-    GUIUtil::setClipboard(GUIUtil::formatBitcoinURI(info));
+    GUIUtil::setClipboard(GUIUtil::formatBitquantumURI(info));
 }
 
 void ReceiveRequestDialog::on_btnCopyAddress_clicked()

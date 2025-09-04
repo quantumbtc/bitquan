@@ -1,10 +1,10 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-present The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_POW_H
-#define BITCOIN_POW_H
+#ifndef BITQUANTUM_POW_H
+#define BITQUANTUM_POW_H
 
 #include <consensus/params.h>
 
@@ -50,4 +50,4 @@ bool CheckProofOfWork(const CBlockHeader& block, unsigned int nBits, const Conse
  */
 bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t height, uint32_t old_nbits, uint32_t new_nbits);
 
-#endif // BITCOIN_POW_H
+#endif // BITQUANTUM_POW_H

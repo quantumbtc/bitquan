@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-2022 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -913,7 +913,7 @@ CFeeRate CBlockPolicyEstimator::estimateSmartFee(int confTarget, FeeCalculation 
      * target M has valid fee rate for that sub-estimate, target M may result
      * in a higher fee rate estimate than target N.
      *
-     * See: https://github.com/bitcoin/bitcoin/issues/11800#issuecomment-349697807
+     * See: https://github.com/bitquantum/bitquantum/issues/11800#issuecomment-349697807
      */
     double halfEst = estimateCombinedFee(confTarget/2, HALF_SUCCESS_PCT, true, &tempResult);
     if (feeCalc) {

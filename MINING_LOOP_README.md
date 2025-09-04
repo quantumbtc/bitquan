@@ -1,20 +1,20 @@
-# Bitcoin Loop Mining Feature
+# Bitquantum Loop Mining Feature
 
 ## Overview
 
-We have extended the `bitcoin-cli` `-generate` command to support loop/continuous mining. This allows you to continuously generate blocks until manually stopped.
+We have extended the `bitquantum-cli` `-generate` command to support loop/continuous mining. This allows you to continuously generate blocks until manually stopped.
 
 ## Features
 
 ### 1. Loop mining syntax
 ```bash
 # Basic syntax
-bitcoin-cli -generate loop [nblocks] [maxtries]
+bitquantum-cli -generate loop [nblocks] [maxtries]
 
 # Examples
-bitcoin-cli -generate loop 1 1000    # generate 1 block per iteration, max 1000 tries
-bitcoin-cli -generate loop 2 500     # generate 2 blocks per iteration, max 500 tries
-bitcoin-cli -generate loop           # use defaults: 1 block per iteration
+bitquantum-cli -generate loop 1 1000    # generate 1 block per iteration, max 1000 tries
+bitquantum-cli -generate loop 2 500     # generate 2 blocks per iteration, max 500 tries
+bitquantum-cli -generate loop           # use defaults: 1 block per iteration
 ```
 
 ### 2. Parameters
@@ -27,7 +27,7 @@ bitcoin-cli -generate loop           # use defaults: 1 block per iteration
 #### Linux/Mac
 ```bash
 # Start loop mining
-bitcoin-cli -generate loop 1 1000
+bitquantum-cli -generate loop 1 1000
 
 # Or use the test script
 chmod +x test_mining_loop.sh
@@ -37,7 +37,7 @@ chmod +x test_mining_loop.sh
 #### Windows
 ```cmd
 # Start loop mining
-bitcoin-cli -generate loop 1 1000
+bitquantum-cli -generate loop 1 1000
 
 # Or use the batch file
 test_mining_loop.bat
@@ -101,7 +101,7 @@ test_mining_loop.bat
 ## Technical details
 
 ### 1. Modified files
-- `src/bitcoin-cli.cpp`: primary changes
+- `src/bitquantum-cli.cpp`: primary changes
 - Added loop mining logic
 - Updated argument parsing
 
@@ -123,8 +123,8 @@ test_mining_loop.bat
 - **Argument error**: check command syntax
 
 ### 2. Debugging
-- Use `bitcoin-cli getblockchaininfo` to check node state
-- Use `bitcoin-cli getwalletinfo` to check wallet state
+- Use `bitquantum-cli getblockchaininfo` to check node state
+- Use `bitquantum-cli getwalletinfo` to check wallet state
 - Check console output for errors
 
 ## Changelog

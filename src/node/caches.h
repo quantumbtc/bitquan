@@ -1,9 +1,9 @@
-// Copyright (c) 2021 The Bitcoin Core developers
+// Copyright (c) 2021 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_CACHES_H
-#define BITCOIN_NODE_CACHES_H
+#ifndef BITQUANTUM_NODE_CACHES_H
+#define BITQUANTUM_NODE_CACHES_H
 
 #include <kernel/caches.h>
 #include <util/byte_units.h>
@@ -29,4 +29,4 @@ struct CacheSizes {
 CacheSizes CalculateCacheSizes(const ArgsManager& args, size_t n_indexes = 0);
 } // namespace node
 
-#endif // BITCOIN_NODE_CACHES_H
+#endif // BITQUANTUM_NODE_CACHES_H

@@ -1,9 +1,9 @@
-# Copyright (c) 2023-present The Bitcoin Core developers
+# Copyright (c) 2023-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
-add_executable(bench_bitcoin
-  bench_bitcoin.cpp
+add_executable(bench_bitquantum
+  bench_bitquantum.cpp
   bench.cpp
   nanobench.cpp
 # Benchmarks:
@@ -57,19 +57,19 @@ add_executable(bench_bitcoin
 )
 
 include(TargetDataSources)
-target_raw_data_sources(bench_bitcoin NAMESPACE benchmark::data
+target_raw_data_sources(bench_bitquantum NAMESPACE benchmark::data
   data/block413567.raw
 )
 
-target_link_libraries(bench_bitcoin
+target_link_libraries(bench_bitquantum
   core_interface
   test_util
-  bitcoin_node
+  bitquantum_node
   Boost::headers
 )
 
 if(ENABLE_WALLET)
-  target_sources(bench_bitcoin
+  target_sources(bench_bitquantum
     PRIVATE
       coin_selection.cpp
       wallet_balance.cpp
@@ -79,11 +79,11 @@ if(ENABLE_WALLET)
       wallet_ismine.cpp
       wallet_migration.cpp
   )
-  target_link_libraries(bench_bitcoin bitcoin_wallet)
+  target_link_libraries(bench_bitquantum bitquantum_wallet)
 endif()
 
 add_test(NAME bench_sanity_check
-  COMMAND bench_bitcoin -sanity-check
+  COMMAND bench_bitquantum -sanity-check
 )
 
-install_binary_component(bench_bitcoin INTERNAL)
+install_binary_component(bench_bitquantum INTERNAL)

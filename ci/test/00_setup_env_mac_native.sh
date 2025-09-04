@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2019-present The Bitcoin Core developers
+# Copyright (c) 2019-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,8 +11,8 @@ export LC_ALL=C.UTF-8
 export PIP_PACKAGES="--break-system-packages zmq"
 export GOAL="install deploy"
 export CMAKE_GENERATOR="Ninja"
-export BITCOIN_CONFIG="-DBUILD_GUI=ON -DWITH_ZMQ=ON -DREDUCE_EXPORTS=ON -DCMAKE_EXE_LINKER_FLAGS='-Wl,-stack_size -Wl,0x80000'"
+export BITQUANTUM_CONFIG="-DBUILD_GUI=ON -DWITH_ZMQ=ON -DREDUCE_EXPORTS=ON -DCMAKE_EXE_LINKER_FLAGS='-Wl,-stack_size -Wl,0x80000'"
 export CI_OS_NAME="macos"
 export NO_DEPENDS=1
 export OSX_SDK=""
-export BITCOIN_CMD="bitcoin -m" # Used in functional tests
+export BITQUANTUM_CMD="bitquantum -m" # Used in functional tests

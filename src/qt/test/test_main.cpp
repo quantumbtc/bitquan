@@ -1,12 +1,12 @@
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-2022 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <bitquantum-build-config.h> // IWYU pragma: keep
 
 #include <interfaces/init.h>
 #include <interfaces/node.h>
-#include <qt/bitcoin.h>
+#include <qt/bitquantum.h>
 #include <qt/guiconstants.h>
 #include <qt/test/apptests.h>
 #include <qt/test/optiontests.h>
@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
     int num_test_failures{0};
 
     {
-        BitcoinApplication app;
+        BitquantumApplication app;
         app.createNode(*init);
 
         AppTests app_tests(app);

@@ -1,9 +1,9 @@
-// Copyright (c) 2024-present The Bitcoin Core developers
+// Copyright (c) 2024-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_NODE_TIMEOFFSETS_H
-#define BITCOIN_NODE_TIMEOFFSETS_H
+#ifndef BITQUANTUM_NODE_TIMEOFFSETS_H
+#define BITQUANTUM_NODE_TIMEOFFSETS_H
 
 #include <sync.h>
 
@@ -46,4 +46,4 @@ public:
     bool WarnIfOutOfSync() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 };
 
-#endif // BITCOIN_NODE_TIMEOFFSETS_H
+#endif // BITQUANTUM_NODE_TIMEOFFSETS_H

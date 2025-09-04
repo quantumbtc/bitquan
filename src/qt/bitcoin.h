@@ -1,11 +1,11 @@
-// Copyright (c) 2011-present The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_QT_BITCOIN_H
-#define BITCOIN_QT_BITCOIN_H
+#ifndef BITQUANTUM_QT_BITQUANTUM_H
+#define BITQUANTUM_QT_BITQUANTUM_H
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
+#include <bitquantum-build-config.h> // IWYU pragma: keep
 
 #include <interfaces/node.h>
 #include <qt/initexecutor.h>
@@ -16,7 +16,7 @@
 
 #include <QApplication>
 
-class BitcoinGUI;
+class BitquantumGUI;
 class ClientModel;
 class NetworkStyle;
 class OptionsModel;
@@ -30,13 +30,13 @@ class Init;
 } // namespace interfaces
 
 
-/** Main Bitcoin application object */
-class BitcoinApplication: public QApplication
+/** Main Bitquantum application object */
+class BitquantumApplication: public QApplication
 {
     Q_OBJECT
 public:
-    explicit BitcoinApplication();
-    ~BitcoinApplication();
+    explicit BitquantumApplication();
+    ~BitquantumApplication();
 
 #ifdef ENABLE_WALLET
     /// Create payment server
@@ -60,7 +60,7 @@ public:
     /// Request core initialization
     void requestInitialize();
 
-    /// Get window identifier of QMainWindow (BitcoinGUI)
+    /// Get window identifier of QMainWindow (BitquantumGUI)
     WId getMainWinId() const;
 
     /// Setup platform style
@@ -84,7 +84,7 @@ public Q_SLOTS:
 Q_SIGNALS:
     void requestedInitialize();
     void requestedShutdown();
-    void windowShown(BitcoinGUI* window);
+    void windowShown(BitquantumGUI* window);
 
 protected:
     bool event(QEvent* e) override;
@@ -93,7 +93,7 @@ private:
     std::optional<InitExecutor> m_executor;
     OptionsModel* optionsModel{nullptr};
     ClientModel* clientModel{nullptr};
-    BitcoinGUI* window{nullptr};
+    BitquantumGUI* window{nullptr};
     QTimer* pollShutdownTimer{nullptr};
 #ifdef ENABLE_WALLET
     PaymentServer* paymentServer{nullptr};
@@ -109,4 +109,4 @@ private:
 
 int GuiMain(int argc, char* argv[]);
 
-#endif // BITCOIN_QT_BITCOIN_H
+#endif // BITQUANTUM_QT_BITQUANTUM_H

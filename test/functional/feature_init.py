@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-present The Bitcoin Core developers
+# Copyright (c) 2021-present The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Tests related to node initialization."""
@@ -10,15 +10,15 @@ import shutil
 import signal
 import subprocess
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitquantumTestFramework
 from test_framework.test_node import (
-    BITCOIN_PID_FILENAME_DEFAULT,
+    BITQUANTUM_PID_FILENAME_DEFAULT,
     ErrorMatch,
 )
 from test_framework.util import assert_equal
 
 
-class InitTest(BitcoinTestFramework):
+class InitTest(BitquantumTestFramework):
     """
     Ensure that initialization can be interrupted at a number of points and not impair
     subsequent starts.
@@ -41,7 +41,7 @@ class InitTest(BitcoinTestFramework):
             if platform.system() == 'Windows':
                 # Don't call Python's terminate() since it calls
                 # TerminateProcess(), which unlike SIGTERM doesn't allow
-                # bitcoind to perform any shutdown logic.
+                # bitquantumd to perform any shutdown logic.
                 os.kill(node.process.pid, signal.CTRL_BREAK_EVENT)
             else:
                 node.process.terminate()
@@ -220,22 +220,22 @@ class InitTest(BitcoinTestFramework):
                 shutil.move(node.chain_path / f"{dir}_bak", node.chain_path / dir)
 
     def init_pid_test(self):
-        BITCOIN_PID_FILENAME_CUSTOM = "my_fancy_bitcoin_pid_file.foobar"
+        BITQUANTUM_PID_FILENAME_CUSTOM = "my_fancy_bitquantum_pid_file.foobar"
 
         self.log.info("Test specifying custom pid file via -pid command line option")
-        custom_pidfile_relative = BITCOIN_PID_FILENAME_CUSTOM
+        custom_pidfile_relative = BITQUANTUM_PID_FILENAME_CUSTOM
         self.log.info(f"-> path relative to datadir ({custom_pidfile_relative})")
         self.restart_node(0, [f"-pid={custom_pidfile_relative}"])
         datadir = self.nodes[0].chain_path
-        assert not (datadir / BITCOIN_PID_FILENAME_DEFAULT).exists()
+        assert not (datadir / BITQUANTUM_PID_FILENAME_DEFAULT).exists()
         assert (datadir / custom_pidfile_relative).exists()
         self.stop_node(0)
         assert not (datadir / custom_pidfile_relative).exists()
 
-        custom_pidfile_absolute = Path(self.options.tmpdir) / BITCOIN_PID_FILENAME_CUSTOM
+        custom_pidfile_absolute = Path(self.options.tmpdir) / BITQUANTUM_PID_FILENAME_CUSTOM
         self.log.info(f"-> absolute path ({custom_pidfile_absolute})")
         self.restart_node(0, [f"-pid={custom_pidfile_absolute}"])
-        assert not (datadir / BITCOIN_PID_FILENAME_DEFAULT).exists()
+        assert not (datadir / BITQUANTUM_PID_FILENAME_DEFAULT).exists()
         assert custom_pidfile_absolute.exists()
         self.stop_node(0)
         assert not custom_pidfile_absolute.exists()

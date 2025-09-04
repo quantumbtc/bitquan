@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# Copyright (c) 2022 The Bitcoin Core developers
+# Copyright (c) 2022 The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-""" Example logging Bitcoin Core mempool events using the mempool:added,
+""" Example logging Bitquantum Core mempool events using the mempool:added,
     mempool:removed, mempool:replaced, and mempool:rejected tracepoints. """
 
 import curses
@@ -121,16 +121,16 @@ int trace_replaced(struct pt_regs *ctx) {
 
 
 def main(pid):
-    print(f"Hooking into bitcoind with pid {pid}")
-    bitcoind_with_usdts = USDT(pid=int(pid))
+    print(f"Hooking into bitquantumd with pid {pid}")
+    bitquantumd_with_usdts = USDT(pid=int(pid))
 
     # attaching the trace functions defined in the BPF program
     # to the tracepoints
-    bitcoind_with_usdts.enable_probe(probe="mempool:added", fn_name="trace_added")
-    bitcoind_with_usdts.enable_probe(probe="mempool:removed", fn_name="trace_removed")
-    bitcoind_with_usdts.enable_probe(probe="mempool:replaced", fn_name="trace_replaced")
-    bitcoind_with_usdts.enable_probe(probe="mempool:rejected", fn_name="trace_rejected")
-    bpf = BPF(text=PROGRAM, usdt_contexts=[bitcoind_with_usdts])
+    bitquantumd_with_usdts.enable_probe(probe="mempool:added", fn_name="trace_added")
+    bitquantumd_with_usdts.enable_probe(probe="mempool:removed", fn_name="trace_removed")
+    bitquantumd_with_usdts.enable_probe(probe="mempool:replaced", fn_name="trace_replaced")
+    bitquantumd_with_usdts.enable_probe(probe="mempool:rejected", fn_name="trace_rejected")
+    bpf = BPF(text=PROGRAM, usdt_contexts=[bitquantumd_with_usdts])
 
     events = []
 
@@ -372,7 +372,7 @@ class Dashboard:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("USAGE: ", sys.argv[0], "<pid of bitcoind>")
+        print("USAGE: ", sys.argv[0], "<pid of bitquantumd>")
         exit(1)
 
     pid = sys.argv[1]

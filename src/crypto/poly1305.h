@@ -1,9 +1,9 @@
-// Copyright (c) 2019-present The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_CRYPTO_POLY1305_H
-#define BITCOIN_CRYPTO_POLY1305_H
+#ifndef BITQUANTUM_CRYPTO_POLY1305_H
+#define BITQUANTUM_CRYPTO_POLY1305_H
 
 #include <span.h>
 
@@ -67,4 +67,4 @@ public:
     }
 };
 
-#endif // BITCOIN_CRYPTO_POLY1305_H
+#endif // BITQUANTUM_CRYPTO_POLY1305_H

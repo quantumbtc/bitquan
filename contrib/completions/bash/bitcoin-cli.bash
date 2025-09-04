@@ -1,10 +1,10 @@
-# bash programmable completion for bitcoin-cli(1)
-# Copyright (c) 2012-2022 The Bitcoin Core developers
+# bash programmable completion for bitquantum-cli(1)
+# Copyright (c) 2012-2022 The Bitquantum Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-# call $bitcoin-cli for RPC
-_bitcoin_rpc() {
+# call $bitquantum-cli for RPC
+_bitquantum_rpc() {
     # determine already specified args necessary for RPC
     local rpcargs=()
     for i in ${COMP_LINE}; do
@@ -14,16 +14,16 @@ _bitcoin_rpc() {
                 ;;
         esac
     done
-    $bitcoin_cli "${rpcargs[@]}" "$@"
+    $bitquantum_cli "${rpcargs[@]}" "$@"
 }
 
-_bitcoin_cli() {
+_bitquantum_cli() {
     local cur prev words=() cword
-    local bitcoin_cli
+    local bitquantum_cli
 
-    # save and use original argument to invoke bitcoin-cli for -help, help and RPC
-    # as bitcoin-cli might not be in $PATH
-    bitcoin_cli="$1"
+    # save and use original argument to invoke bitquantum-cli for -help, help and RPC
+    # as bitquantum-cli might not be in $PATH
+    bitquantum_cli="$1"
 
     COMPREPLY=()
     _get_comp_words_by_ref -n = cur prev words cword
@@ -109,12 +109,12 @@ _bitcoin_cli() {
 
             # only parse -help if senseful
             if [[ -z "$cur" || "$cur" =~ ^- ]]; then
-                helpopts=$($bitcoin_cli -help 2>&1 | awk '$1 ~ /^-/ { sub(/=.*/, "="); print $1 }' )
+                helpopts=$($bitquantum_cli -help 2>&1 | awk '$1 ~ /^-/ { sub(/=.*/, "="); print $1 }' )
             fi
 
             # only parse help if senseful
             if [[ -z "$cur" || "$cur" =~ ^[a-z] ]]; then
-                commands=$(_bitcoin_rpc help 2>/dev/null | awk '$1 ~ /^[a-z]/ { print $1; }')
+                commands=$(_bitquantum_rpc help 2>/dev/null | awk '$1 ~ /^[a-z]/ { print $1; }')
             fi
 
             COMPREPLY=( $( compgen -W "$helpopts $commands" -- "$cur" ) )
@@ -127,7 +127,7 @@ _bitcoin_cli() {
             ;;
     esac
 } &&
-complete -F _bitcoin_cli bitcoin-cli
+complete -F _bitquantum_cli bitquantum-cli
 
 # Local variables:
 # mode: shell-script

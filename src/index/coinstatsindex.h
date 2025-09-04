@@ -1,9 +1,9 @@
-// Copyright (c) 2020-2022 The Bitcoin Core developers
+// Copyright (c) 2020-2022 The Bitquantum Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_INDEX_COINSTATSINDEX_H
-#define BITCOIN_INDEX_COINSTATSINDEX_H
+#ifndef BITQUANTUM_INDEX_COINSTATSINDEX_H
+#define BITQUANTUM_INDEX_COINSTATSINDEX_H
 
 #include <crypto/muhash.h>
 #include <index/base.h>
@@ -66,4 +66,4 @@ public:
 /// The global UTXO set hash object.
 extern std::unique_ptr<CoinStatsIndex> g_coin_stats_index;
 
-#endif // BITCOIN_INDEX_COINSTATSINDEX_H
+#endif // BITQUANTUM_INDEX_COINSTATSINDEX_H
