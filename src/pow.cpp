@@ -145,6 +145,8 @@ bool CheckProofOfWork(const CBlockHeader& block, unsigned int nBits, const Conse
 {
     if (EnableFuzzDeterminism()) return (block.GetHash().data()[31] & 0x80) == 0;
 
+    auto bnTarget{DeriveTarget(nBits, params.powLimit)};
+    if (!bnTarget) return false;
     // Use RandomQ algorithm for proof of work checking
     return RandomQMining::CheckRandomQProofOfWork(block, nBits, params.powLimit);
 }
