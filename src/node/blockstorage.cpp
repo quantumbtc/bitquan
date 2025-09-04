@@ -137,7 +137,7 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 // Create a CBlockHeader from the CBlockIndex for RandomQ POW checking
                 CBlockHeader header;
                 header.nVersion = pindexNew->nVersion;
-                header.hashPrevBlock = pindexNew->hashPrev;
+                header.hashPrevBlock = diskindex.hashPrev;
                 header.hashMerkleRoot = pindexNew->hashMerkleRoot;
                 header.nTime = pindexNew->nTime;
                 header.nBits = pindexNew->nBits;
