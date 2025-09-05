@@ -17,6 +17,18 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O3 -march=native -mtune=native")
     # Add C++17 features and fix nlohmann-json compatibility
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -D_GLIBCXX_USE_C99")
+    
+    # Check if we're using MinGW cross-compiler
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER MATCHES "mingw")
+        message(STATUS "Detected MinGW cross-compiler")
+        # Fix MinGW header path issues
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_WINNT=0x0601")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_IE=0x0800")
+        # Use Windows headers instead of Linux headers
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN64")
+    endif()
 endif()
 
 # Find required packages
