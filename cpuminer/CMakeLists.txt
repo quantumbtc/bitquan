@@ -21,6 +21,13 @@ else()
     # Check if we're using MinGW cross-compiler
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER MATCHES "mingw")
         message(STATUS "Detected MinGW cross-compiler")
+        # Set MinGW cross-compilation environment
+        set(CMAKE_SYSTEM_NAME Windows)
+        set(CMAKE_SYSTEM_PROCESSOR x86_64)
+        set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
+        set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+        set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
         # Fix MinGW header path issues
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_WINNT=0x0601")
@@ -28,6 +35,9 @@ else()
         # Use Windows headers instead of Linux headers
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN64")
+        # Force MinGW to use its own headers
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem /usr/x86_64-w64-mingw32/include")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem /usr/lib/gcc/x86_64-w64-mingw32/13-win32/include")
     endif()
 endif()
 
