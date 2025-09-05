@@ -57,10 +57,7 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/../src)
 include_directories(${CMAKE_SOURCE_DIR}/../src/crypto)
 include_directories(${CMAKE_SOURCE_DIR}/../src/primitives)
-include_directories(${CMAKE_SOURCE_DIR}/../src/uint256.h)
-include_directories(${CMAKE_SOURCE_DIR}/../src/arith_uint256.h)
 include_directories(${CMAKE_SOURCE_DIR}/../src/util)
-include_directories(${CMAKE_SOURCE_DIR}/../src/streams.h)
 
 # Source files
 set(SOURCES
@@ -69,7 +66,10 @@ set(SOURCES
     rpc_client.cpp
     randomq_miner.cpp
     config.cpp
-    ${CRYPTO_SOURCES}
+    # Crypto source files
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
 )
 
 # Create executable
@@ -134,13 +134,6 @@ else()
         -mtune=native
     )
 endif()
-
-# Include crypto source files directly
-set(CRYPTO_SOURCES
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
-)
 
 # Windows specific: Copy DLLs
 if(WIN32)
