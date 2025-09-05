@@ -10,6 +10,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <cstdint>
 
 // Include RandomQ implementation
 #include "randomq_hash.h"

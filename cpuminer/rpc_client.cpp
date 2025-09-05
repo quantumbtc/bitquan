@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <chrono>
 #include <thread>
+#include <cstring>
 
 // HTTP response callback for libcurl
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {

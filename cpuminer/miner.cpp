@@ -7,6 +7,7 @@
 #include <csignal>
 #include <chrono>
 #include <iomanip>
+#include <cstring>
 
 // Static member initialization
 std::atomic<bool> Miner::s_should_stop(false);

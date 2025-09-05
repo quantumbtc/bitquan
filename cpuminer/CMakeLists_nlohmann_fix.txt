@@ -17,6 +17,8 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O3 -march=native -mtune=native")
     # Add C++17 features and fix nlohmann-json compatibility
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -D_GLIBCXX_USE_C99")
+    # Add additional flags for nlohmann-json compatibility
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_C99_STDIO")
 endif()
 
 # Find required packages
@@ -59,10 +61,7 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/../src)
 include_directories(${CMAKE_SOURCE_DIR}/../src/crypto)
 include_directories(${CMAKE_SOURCE_DIR}/../src/primitives)
-include_directories(${CMAKE_SOURCE_DIR}/../src/uint256.h)
-include_directories(${CMAKE_SOURCE_DIR}/../src/arith_uint256.h)
 include_directories(${CMAKE_SOURCE_DIR}/../src/util)
-include_directories(${CMAKE_SOURCE_DIR}/../src/streams.h)
 
 # Source files
 set(SOURCES
@@ -71,7 +70,10 @@ set(SOURCES
     rpc_client.cpp
     randomq_miner.cpp
     config.cpp
-    ${CRYPTO_SOURCES}
+    # Crypto source files
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
 )
 
 # Create executable
@@ -134,15 +136,11 @@ else()
         -O3
         -march=native
         -mtune=native
+        -std=c++17
+        -D_GLIBCXX_USE_C99
+        -D_GLIBCXX_USE_C99_STDIO
     )
 endif()
-
-# Include crypto source files directly
-set(CRYPTO_SOURCES
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
-)
 
 # Windows specific: Copy DLLs
 if(WIN32)

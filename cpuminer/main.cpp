@@ -5,6 +5,7 @@
 #include "miner.h"
 #include <iostream>
 #include <exception>
+#include <cstring>
 
 int main(int argc, char* argv[]) {
     std::cout << "CPUMiner v1.0.0 - Bitquantum RandomQ CPU Miner" << std::endl;
