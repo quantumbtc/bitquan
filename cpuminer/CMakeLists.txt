@@ -47,6 +47,45 @@ find_package(Threads REQUIRED)
 
 # Find libcurl
 find_package(CURL REQUIRED)
+if(NOT CURL_FOUND)
+    # Try to find libcurl using pkg-config for MinGW
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER MATCHES "mingw")
+        pkg_check_modules(CURL REQUIRED libcurl)
+        if(CURL_FOUND)
+            message(STATUS "Found libcurl via pkg-config")
+            set(CURL_LIBRARIES ${CURL_LIBRARIES})
+            set(CURL_INCLUDE_DIRS ${CURL_INCLUDE_DIRS})
+        else()
+            # Try to find libcurl manually for MinGW
+            find_library(CURL_LIBRARY
+                NAMES curl libcurl
+                PATHS /usr/x86_64-w64-mingw32/lib
+                NO_DEFAULT_PATH
+            )
+            find_path(CURL_INCLUDE_DIR
+                NAMES curl/curl.h
+                PATHS /usr/x86_64-w64-mingw32/include
+                NO_DEFAULT_PATH
+            )
+            if(CURL_LIBRARY AND CURL_INCLUDE_DIR)
+                message(STATUS "Found libcurl manually for MinGW")
+                set(CURL_LIBRARIES ${CURL_LIBRARY})
+                set(CURL_INCLUDE_DIRS ${CURL_INCLUDE_DIR})
+                set(CURL_FOUND TRUE)
+            else()
+                message(FATAL_ERROR "libcurl not found for MinGW. Please install MinGW libcurl development package:
+Ubuntu/Debian: sudo apt-get install libcurl4-openssl-dev
+CentOS/RHEL: sudo yum install libcurl-devel
+Arch Linux: sudo pacman -S curl")
+            endif()
+        endif()
+    else()
+        message(FATAL_ERROR "libcurl not found. Please install libcurl development package:
+Ubuntu/Debian: sudo apt-get install libcurl4-openssl-dev
+CentOS/RHEL: sudo yum install libcurl-devel
+Arch Linux: sudo pacman -S curl")
+    endif()
+endif()
 
 # Find JSON library - try multiple methods
 find_package(nlohmann_json QUIET)
