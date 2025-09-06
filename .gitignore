@@ -28,3 +28,10 @@ target/
 /ci/scratch/
 /.vs
 /cpuminer/vcpkg
+/cpuminer/.vs
+/cpuminer/build
+/cpuminer/build_windows
+/cpuminer/build_windows
+/cpuminer/build_windows_msvc
+/cpuminer/build_windows_mingw
+/cpuminer/build_windows
