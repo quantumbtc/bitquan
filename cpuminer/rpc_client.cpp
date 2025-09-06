@@ -57,10 +57,7 @@ bool RPCClient::initialize(const std::string& host, uint16_t port,
     m_rpc_password = password;
     
     // Construct RPC URL
-    std::ostringstream oss;
-    oss << "http://" << m_rpc_user << ":" << m_rpc_password 
-        << "@" << m_rpc_host << ":" << m_rpc_port;
-    m_rpc_url = oss.str();
+    m_rpc_url = "http://" + m_rpc_user + ":" + m_rpc_password + "@" + m_rpc_host + ":" + std::to_string(m_rpc_port);
     
     log(2, "RPC client initialized for " + m_rpc_host + ":" + std::to_string(m_rpc_port));
     return true;
@@ -251,7 +248,7 @@ WorkData RPCClient::parseBlockTemplate(const nlohmann::json& template_data) {
         work.version = template_data["version"].get<uint32_t>();
         work.previous_block_hash = template_data["previousblockhash"].get<std::string>();
         work.target = template_data["target"].get<std::string>();
-        work.bits = template_data["bits"].get<std::string>();
+        work.bits = std::stoul(template_data["bits"].get<std::string>(), nullptr, 16);
         work.height = template_data["height"].get<uint32_t>();
         work.timestamp = template_data["curtime"].get<uint32_t>();
         

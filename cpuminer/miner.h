@@ -11,6 +11,8 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <mutex>
+#include <chrono>
 
 class Miner {
 public:

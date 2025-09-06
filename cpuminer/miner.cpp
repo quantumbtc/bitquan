@@ -29,6 +29,7 @@ Miner::Miner()
 
 Miner::~Miner() {
     stop();
+    cleanup();
 }
 
 bool Miner::initialize(int argc, char* argv[]) {
@@ -172,6 +173,8 @@ void Miner::printStats() const {
         std::cout << "Hash Rate: " << std::fixed << std::setprecision(2) 
                   << randomq_stats.hash_rate << " H/s" << std::endl;
         std::cout << "Valid Blocks: " << randomq_stats.valid_blocks << std::endl;
+        std::cout << "Invalid Blocks: " << randomq_stats.invalid_blocks << std::endl;
+        std::cout << "Elapsed Time: " << randomq_stats.elapsed_time << " seconds" << std::endl;
     }
     
     std::cout << "=======================" << std::endl;

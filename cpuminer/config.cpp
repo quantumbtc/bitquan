@@ -153,13 +153,41 @@ bool ConfigManager::loadFromArgs(int argc, char* argv[], MinerConfig& config) {
         } else if (arg == "--rpc-password" && i + 1 < argc) {
             config.rpc_password = argv[++i];
         } else if (arg == "--threads" && i + 1 < argc) {
-            config.num_threads = std::stoi(argv[++i]);
+            try {
+                config.num_threads = std::stoi(argv[++i]);
+                if (config.num_threads < 0) {
+                    std::cerr << "Error: Thread count cannot be negative" << std::endl;
+                    return false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid thread count: " << argv[i] << std::endl;
+                return false;
+            }
         } else if (arg == "--nonce-start" && i + 1 < argc) {
-            config.nonce_start = std::stoul(argv[++i]);
+            try {
+                config.nonce_start = std::stoul(argv[++i]);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid nonce start value: " << argv[i] << std::endl;
+                return false;
+            }
         } else if (arg == "--nonce-end" && i + 1 < argc) {
-            config.nonce_end = std::stoul(argv[++i]);
+            try {
+                config.nonce_end = std::stoul(argv[++i]);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid nonce end value: " << argv[i] << std::endl;
+                return false;
+            }
         } else if (arg == "--randomq-rounds" && i + 1 < argc) {
-            config.randomq_rounds = std::stoull(argv[++i]);
+            try {
+                config.randomq_rounds = std::stoull(argv[++i]);
+                if (config.randomq_rounds == 0) {
+                    std::cerr << "Error: RandomQ rounds must be greater than 0" << std::endl;
+                    return false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid RandomQ rounds value: " << argv[i] << std::endl;
+                return false;
+            }
         } else if (arg == "--no-avx2") {
             config.enable_avx2 = false;
         } else if (arg == "--no-sse4") {

@@ -6,6 +6,8 @@
 #include <iostream>
 #include <exception>
 #include <cstring>
+#include <thread>
+#include <chrono>
 
 int main(int argc, char* argv[]) {
     std::cout << "CPUMiner v1.0.0 - Bitquantum RandomQ CPU Miner" << std::endl;

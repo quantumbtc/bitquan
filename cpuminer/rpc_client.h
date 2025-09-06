@@ -12,11 +12,46 @@
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 // Forward declarations
-struct WorkData;
 class RandomQMiner;
+
+// Mining statistics
+struct MiningStats {
+    uint64_t total_hashes;
+    uint64_t valid_blocks;
+    uint64_t invalid_blocks;
+    double hash_rate;
+    double elapsed_time;
+    uint32_t current_nonce;
+    std::string current_target;
+    std::string best_hash;
+    uint32_t best_nonce;
+    
+    void reset();
+    void print() const;
+};
+
+// Work data structure
+struct WorkData {
+    std::string block_template;
+    std::string previous_block_hash;
+    std::string target;
+    uint32_t version;
+    uint32_t timestamp;
+    uint32_t bits;
+    uint32_t height;
+    std::string coinbase_tx;
+    std::vector<std::string> transactions;
+    std::string merkle_root;
+    uint32_t nonce_start;
+    uint32_t nonce_end;
+    
+    bool isValid() const;
+    void print() const;
+};
 
 class RPCClient {
 public:
