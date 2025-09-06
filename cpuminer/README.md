@@ -37,7 +37,7 @@ sudo yum install gcc-c++ cmake libcurl-devel nlohmann-json3-devel
 brew install cmake curl nlohmann-json
 ```
 
-### Compilation
+### Linux Compilation
 
 ```bash
 # Create build directory
@@ -49,6 +49,7 @@ cmake ../cpuminer
 # Build
 make -j$(nproc)
 ```
+
 
 ## Usage
 
