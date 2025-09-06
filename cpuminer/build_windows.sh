@@ -99,7 +99,7 @@ cd build_windows
 
 # Configure with CMake
 echo "Configuring with CMake for Windows..."
-CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
+CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_STANDARD=20"
 
 if [ "$COMPILER" = "mingw" ]; then
     CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_SYSTEM_NAME=Windows"

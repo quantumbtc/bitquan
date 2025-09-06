@@ -14,7 +14,7 @@ A high-performance CPU miner for Bitquantum Core using the RandomQ post-quantum 
 
 ## Requirements
 
-- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- C++20 compatible compiler (GCC 10+, Clang 10+, MSVC 2019+)
 - CMake 3.16+
 - libcurl
 - nlohmann/json

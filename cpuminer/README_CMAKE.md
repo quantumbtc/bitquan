@@ -35,7 +35,7 @@
 
 ### Linux
 - CMake 3.16+
-- GCC 7+ 或 Clang 5+
+- GCC 10+ 或 Clang 10+
 - libcurl开发包
 - nlohmann-json开发包
 

@@ -77,7 +77,7 @@ cd build
 
 # Configure with CMake
 echo "Configuring with CMake..."
-CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
+CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_STANDARD=20"
 if [ "$VERBOSE" = true ]; then
     CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_VERBOSE_MAKEFILE=ON"
 fi
