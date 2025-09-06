@@ -1,11 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(cpuminer)
+project(cpuminer VERSION 1.0.0 LANGUAGES CXX)
 
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Platform detection
+# Set default build type
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Platform detection and settings
 if(WIN32)
     # Windows specific settings
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3 /WX- /O2 /Oi /Ot /Oy /GL")
@@ -15,27 +22,21 @@ if(WIN32)
 else()
     # Linux/Unix specific settings
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O3 -march=native -mtune=native")
-    # Add C++17 features and fix nlohmann-json compatibility
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -D_GLIBCXX_USE_C99")
     
     # Check if we're using MinGW cross-compiler
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER MATCHES "mingw")
         message(STATUS "Detected MinGW cross-compiler")
-        # Set MinGW cross-compilation environment
         set(CMAKE_SYSTEM_NAME Windows)
         set(CMAKE_SYSTEM_PROCESSOR x86_64)
         set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
         set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
         set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
         set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-        # Fix MinGW header path issues
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__USE_MINGW_ANSI_STDIO=1")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_WINNT=0x0601")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32_IE=0x0800")
-        # Use Windows headers instead of Linux headers
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN64")
-        # Force MinGW to use its own headers
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_WIN32 -D_WIN64")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem /usr/x86_64-w64-mingw32/include")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem /usr/lib/gcc/x86_64-w64-mingw32/13-win32/include")
     endif()
@@ -48,7 +49,6 @@ find_package(Threads REQUIRED)
 # Find libcurl
 find_package(CURL REQUIRED)
 if(NOT CURL_FOUND)
-    # Try to find libcurl using pkg-config for MinGW
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER MATCHES "mingw")
         pkg_check_modules(CURL REQUIRED libcurl)
         if(CURL_FOUND)
@@ -56,7 +56,6 @@ if(NOT CURL_FOUND)
             set(CURL_LIBRARIES ${CURL_LIBRARIES})
             set(CURL_INCLUDE_DIRS ${CURL_INCLUDE_DIRS})
         else()
-            # Try to find libcurl manually for MinGW
             find_library(CURL_LIBRARY
                 NAMES curl libcurl
                 PATHS /usr/x86_64-w64-mingw32/lib
@@ -73,30 +72,22 @@ if(NOT CURL_FOUND)
                 set(CURL_INCLUDE_DIRS ${CURL_INCLUDE_DIR})
                 set(CURL_FOUND TRUE)
             else()
-                message(FATAL_ERROR "libcurl not found for MinGW. Please install MinGW libcurl development package:
-Ubuntu/Debian: sudo apt-get install libcurl4-openssl-dev
-CentOS/RHEL: sudo yum install libcurl-devel
-Arch Linux: sudo pacman -S curl")
+                message(FATAL_ERROR "libcurl not found for MinGW. Please install MinGW libcurl development package")
             endif()
         endif()
     else()
-        message(FATAL_ERROR "libcurl not found. Please install libcurl development package:
-Ubuntu/Debian: sudo apt-get install libcurl4-openssl-dev
-CentOS/RHEL: sudo yum install libcurl-devel
-Arch Linux: sudo pacman -S curl")
+        message(FATAL_ERROR "libcurl not found. Please install libcurl development package")
     endif()
 endif()
 
-# Find JSON library - try multiple methods
+# Find JSON library
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
-    # Try to find nlohmann_json using pkg-config
     pkg_check_modules(NLOHMANN_JSON QUIET nlohmann_json)
     if(NLOHMANN_JSON_FOUND)
         message(STATUS "Found nlohmann_json via pkg-config")
         set(nlohmann_json_FOUND TRUE)
     else()
-        # Try to find header-only version
         find_path(NLOHMANN_JSON_INCLUDE_DIR 
             NAMES nlohmann/json.hpp
             PATHS /usr/include /usr/local/include
@@ -116,15 +107,6 @@ if(NOT nlohmann_json_FOUND)
     endif()
 endif()
 
-# Include directories
-include_directories(${CMAKE_SOURCE_DIR}/../src)
-include_directories(${CMAKE_SOURCE_DIR}/../src/crypto)
-include_directories(${CMAKE_SOURCE_DIR}/../src/primitives)
-include_directories(${CMAKE_SOURCE_DIR}/../src/uint256.h)
-include_directories(${CMAKE_SOURCE_DIR}/../src/arith_uint256.h)
-include_directories(${CMAKE_SOURCE_DIR}/../src/util)
-include_directories(${CMAKE_SOURCE_DIR}/../src/streams.h)
-
 # Source files
 set(SOURCES
     main.cpp
@@ -132,11 +114,22 @@ set(SOURCES
     rpc_client.cpp
     randomq_miner.cpp
     config.cpp
-    ${CRYPTO_SOURCES}
+    # Crypto source files
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
+    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
 )
 
 # Create executable
 add_executable(cpuminer ${SOURCES})
+
+# Include directories
+target_include_directories(cpuminer PRIVATE
+    ${CMAKE_SOURCE_DIR}/../src
+    ${CMAKE_SOURCE_DIR}/../src/crypto
+    ${CMAKE_SOURCE_DIR}/../src/primitives
+    ${CMAKE_SOURCE_DIR}/../src/util
+)
 
 # Link libraries
 target_link_libraries(cpuminer
@@ -144,7 +137,7 @@ target_link_libraries(cpuminer
     Threads::Threads
 )
 
-# Link JSON library based on how it was found
+# Link JSON library
 if(TARGET nlohmann_json)
     target_link_libraries(cpuminer nlohmann_json)
 elseif(NLOHMANN_JSON_FOUND)
@@ -170,7 +163,6 @@ if(WIN32)
         oleaut32
         uuid
         comdlg32
-        advapi32
     )
 endif()
 
@@ -198,16 +190,8 @@ else()
     )
 endif()
 
-# Include crypto source files directly
-set(CRYPTO_SOURCES
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/randomq_mining.cpp
-    ${CMAKE_SOURCE_DIR}/../src/crypto/sha256.cpp
-)
-
 # Windows specific: Copy DLLs
 if(WIN32)
-    # Copy curl DLL if found
     find_file(CURL_DLL
         NAMES libcurl.dll curl.dll
         PATHS ${CURL_LIBRARY_DIR} ${CURL_LIBRARY_DIR}/../bin
@@ -220,7 +204,6 @@ if(WIN32)
         )
     endif()
     
-    # Copy vcpkg DLLs if using vcpkg
     if(DEFINED VCPKG_TARGET_TRIPLET)
         find_file(VCPKG_CURL_DLL
             NAMES libcurl.dll
@@ -242,3 +225,18 @@ if(WIN32)
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     )
 endif()
+
+# Install rules
+install(TARGETS cpuminer
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
+# Package configuration
+set(CPACK_PACKAGE_NAME "cpuminer")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Bitquantum RandomQ CPU Miner")
+set(CPACK_PACKAGE_VENDOR "Bitquantum")
+
+include(CPack)

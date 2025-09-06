@@ -196,14 +196,22 @@ Enable debug logging for detailed information:
 
 ```
 cpuminer/
-├── CMakeLists.txt      # Build configuration
-├── main.cpp            # Main entry point
-├── miner.h/cpp         # Main miner class
-├── randomq_miner.h/cpp # RandomQ mining logic
-├── rpc_client.h/cpp    # RPC communication
-├── config.h/cpp        # Configuration management
-├── config.conf         # Default configuration
-└── README.md           # This file
+├── CMakeLists.txt                 # CMake构建配置
+├── CMakePresets.json              # CMake预设配置
+├── build.sh                       # Linux构建脚本
+├── build_windows.sh               # Windows构建脚本
+├── build_windows.bat              # Windows批处理构建脚本
+├── install_dependencies_linux.sh  # Linux依赖安装脚本
+├── install_dependencies_windows.bat # Windows依赖安装脚本
+├── main.cpp                       # 主程序入口
+├── miner.h/cpp                    # 主挖矿类
+├── randomq_miner.h/cpp            # RandomQ挖矿逻辑
+├── rpc_client.h/cpp               # RPC通信
+├── config.h/cpp                   # 配置管理
+├── config.conf                    # 默认配置文件
+├── cmake/                         # CMake工具链文件
+├── README.md                      # 项目说明文档
+└── README_CMAKE.md                # CMake构建指南
 ```
 
 ### Contributing
