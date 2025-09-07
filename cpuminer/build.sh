@@ -25,8 +25,18 @@ fi
 # Parse command line arguments
 BUILD_TYPE="Release"
 CLEAN=false
-THREADS=$(nproc)
 VERBOSE=false
+WINDOWS=false
+TOOLCHAIN_FILE="depends/x86_64-w64-mingw32/toolchain.cmake"
+
+# Detect number of processors with portable fallback
+if command -v nproc >/dev/null 2>&1; then
+    THREADS=$(nproc)
+elif command -v getconf >/dev/null 2>&1; then
+    THREADS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+else
+    THREADS=1
+fi
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -39,11 +49,20 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -j|--jobs)
-            THREADS="$2"
-            shift 2
+            if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                THREADS="$2"
+                shift 2
+            else
+                echo "Error: --jobs requires a numeric argument"
+                exit 1
+            fi
             ;;
         -v|--verbose)
             VERBOSE=true
+            shift
+            ;;
+        --windows)
+            WINDOWS=true
             shift
             ;;
         -h|--help)
@@ -51,8 +70,9 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  -d, --debug     Build in Debug mode (default: Release)"
             echo "  -c, --clean     Clean build directory before building"
-            echo "  -j, --jobs N    Number of parallel jobs (default: $(nproc))"
+            echo "  -j, --jobs N    Number of parallel jobs (default: $THREADS)"
             echo "  -v, --verbose   Verbose output"
+            echo "  --windows       Cross-compile for Windows (requires mingw-w64 and toolchain file)"
             echo "  -h, --help      Show this help message"
             exit 0
             ;;
@@ -75,29 +95,51 @@ echo "Creating build directory..."
 mkdir -p build
 cd build
 
-# Configure with CMake
+# Configure with CMake (use array to avoid word-splitting)
 echo "Configuring with CMake..."
-CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_STANDARD=20"
+CMAKE_ARGS=( -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_CXX_STANDARD=20 )
 if [ "$VERBOSE" = true ]; then
-    CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_VERBOSE_MAKEFILE=ON"
+    CMAKE_ARGS+=( -DCMAKE_VERBOSE_MAKEFILE=ON )
 fi
 
-cmake .. $CMAKE_ARGS
+if [ "$WINDOWS" = true ]; then
+    if [ ! -f "../$TOOLCHAIN_FILE" ]; then
+        echo "Error: Windows toolchain file not found: $TOOLCHAIN_FILE"
+        exit 1
+    fi
+    echo "Cross-compiling for Windows using MinGW toolchain..."
+    cmake .. -DCMAKE_TOOLCHAIN_FILE="../$TOOLCHAIN_FILE" "${CMAKE_ARGS[@]}"
+else
+    cmake .. "${CMAKE_ARGS[@]}"
+fi
 
 # Build
 echo "Building with $THREADS parallel jobs..."
 if [ "$VERBOSE" = true ]; then
-    cmake --build . --parallel $THREADS --verbose
+    cmake --build . --parallel "$THREADS" --verbose
 else
-    cmake --build . --parallel $THREADS
+    cmake --build . --parallel "$THREADS"
 fi
 
 echo ""
-echo "Build completed successfully!"
-echo "Executable: ./build/cpuminer"
-echo ""
-echo "Usage examples:"
-echo "  ./build/cpuminer --help"
-echo "  ./build/cpuminer --rpc-user bitquantum --rpc-password bitquantum123 --threads 4"
-echo "  ./build/cpuminer --config ../config.conf"
-echo ""
+if [ "$WINDOWS" = true ]; then
+    EXE_PATH="$(pwd)/cpuminer.exe"
+    echo "Windows build completed successfully!"
+    echo "Executable: $EXE_PATH"
+    echo ""
+    echo "Usage examples:"
+    echo "  $EXE_PATH --help"
+    echo "  $EXE_PATH --rpc-user bitquantum --rpc-password bitquantum123 --threads 4"
+    echo "  $EXE_PATH --config ../config.conf"
+    echo ""
+else
+    EXE_PATH="$(pwd)/cpuminer"
+    echo "Build completed successfully!"
+    echo "Executable: $EXE_PATH"
+    echo ""
+    echo "Usage examples:"
+    echo "  $EXE_PATH --help"
+    echo "  $EXE_PATH --rpc-user bitquantum --rpc-password bitquantum123 --threads 4"
+    echo "  $EXE_PATH --config ../config.conf"
+    echo ""
+fi
