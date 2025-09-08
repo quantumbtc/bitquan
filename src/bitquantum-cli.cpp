@@ -35,6 +35,11 @@
 #include <string>
 #include <tuple>
 #include <csignal>
+#include <core_io.h>
+#include <streams.h>
+#include <crypto/randomq_mining.h>
+#include <arith_uint256.h>
+#include <uint256.h>
 
 #ifndef WIN32
 #include <unistd.h>
@@ -71,6 +76,7 @@ static const std::string DEFAULT_NBLOCKS = "1";
 
 /** Default -color setting. */
 static const std::string DEFAULT_COLOR_SETTING{"auto"};
+static const bool DEFAULT_CLIENT_MINE{false};
 
 static void SetupCliArgs(ArgsManager& argsman)
 {
@@ -99,6 +105,7 @@ static void SetupCliArgs(ArgsManager& argsman)
     SetupChainParamsBaseOptions(argsman);
     argsman.AddArg("-color=<when>", strprintf("Color setting for CLI output (default: %s). Valid values: always, auto (add color codes when standard output is connected to a terminal and OS is not WIN32), never. Only applies to the output of -getinfo.", DEFAULT_COLOR_SETTING), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-named", strprintf("Pass named instead of positional arguments (default: %s)", DEFAULT_NAMED), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-clientmine", strprintf("Mine on the CLI client using getblocktemplate/submitblock (default: %s)", DEFAULT_CLIENT_MINE), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcclienttimeout=<n>", strprintf("Timeout in seconds during HTTP requests, or 0 for no timeout. (default: %d)", DEFAULT_HTTP_CLIENT_TIMEOUT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcconnect=<ip>", strprintf("Send commands to node running on <ip> (default: %s)", DEFAULT_RPCCONNECT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpccookiefile=<loc>", "Location of the auth cookie. Relative paths will be prefixed by a net-specific datadir location. (default: data dir)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -1290,28 +1297,38 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     } catch (...) { /* ignore target/thread print errors */ }
     tfm::format(std::cout, "Press Ctrl+C to stop mining\n");
 
-    // Start CLI-side hashrate reporter polling the node's getminingstatus
+    // Reporter thread setup (dual mode)
+    const bool client_mine = gArgs.GetBoolArg("-clientmine", DEFAULT_CLIENT_MINE);
     std::atomic<bool> stop_report{false};
-    std::thread cli_reporter([&stop_report]() {
+    std::atomic<uint64_t> local_total_hashes{0};
+    const uint64_t local_start_time = GetTime();
+    std::thread cli_reporter([&]() {
         DefaultRequestHandler rh;
-        uint64_t last_total_hashes = 0;
-        uint64_t last_time = 0;
         while (!stop_report.load()) {
             try {
-                const UniValue st = ConnectAndCallRPC(&rh, "getminingstatus", /*args=*/{});
-                const UniValue err = st.find_value("error");
-                if (err.isNull()) {
-                    const UniValue res = st.find_value("result");
-                    if (!res.isNull() && !res["total_hashes"].isNull() && !res["mining_time"].isNull() && !res["hashrate"].isNull()) {
-                        const uint64_t total_hashes = res["total_hashes"].getInt<uint64_t>();
-                        const uint64_t mining_time = res["mining_time"].getInt<uint64_t>();
-                        const double current = res["hashrate"].get_real();
-                        const double average = mining_time > 0 ? (double)total_hashes / (double)mining_time : 0.0;
-                        tfm::format(std::cout,
-                            "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
-                            current, average, (unsigned long long)total_hashes);
-                        last_total_hashes = total_hashes;
-                        last_time = mining_time;
+                if (client_mine) {
+                    const uint64_t now = GetTime();
+                    const uint64_t elapsed = now > local_start_time ? (now - local_start_time) : 0;
+                    const uint64_t total = local_total_hashes.load();
+                    const double average = elapsed > 0 ? (double)total / (double)elapsed : 0.0;
+                    // Approximate current rate as average over last window (simple)
+                    tfm::format(std::cout,
+                        "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
+                        average, average, (unsigned long long)total);
+                } else {
+                    const UniValue st = ConnectAndCallRPC(&rh, "getminingstatus", /*args=*/{});
+                    const UniValue err = st.find_value("error");
+                    if (err.isNull()) {
+                        const UniValue res = st.find_value("result");
+                        if (!res.isNull() && !res["total_hashes"].isNull() && !res["mining_time"].isNull() && !res["hashrate"].isNull()) {
+                            const uint64_t total_hashes = res["total_hashes"].getInt<uint64_t>();
+                            const uint64_t mining_time = res["mining_time"].getInt<uint64_t>();
+                            const double current = res["hashrate"].get_real();
+                            const double average = mining_time > 0 ? (double)total_hashes / (double)mining_time : 0.0;
+                            tfm::format(std::cout,
+                                "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
+                                current, average, (unsigned long long)total_hashes);
+                        }
                     }
                 }
             } catch (...) { /* ignore transient errors */ }
@@ -1329,12 +1346,72 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
             loop_args.push_back(address);
             loop_args.push_back(std::to_string(maxtries));
             
-            // Call generatetoaddress directly
             const std::optional<std::string> wallet_name{RpcWalletName(gArgs)};
-            
-            // Create a simple handler for this call
             DefaultRequestHandler temp_handler;
-            const UniValue reply = ConnectAndCallRPC(&temp_handler, "generatetoaddress", loop_args, wallet_name);
+            UniValue reply(UniValue::VOBJ);
+            if (!client_mine) {
+                // Node-side mining
+                reply = ConnectAndCallRPC(&temp_handler, "generatetoaddress", loop_args, wallet_name);
+            } else {
+                // Client-side mining using getblocktemplate hex
+                int blocks_generated = 0;
+                UniValue result_array(UniValue::VARR);
+                for (int bi = 0; bi < nblocks_per_iteration; ++bi) {
+                    if (g_cli_stop.load()) break;
+                    std::vector<std::string> gbt_args;
+                    gbt_args.emplace_back("{\"rules\":[\"segwit\"]}");
+                    const UniValue gbt = ConnectAndCallRPC(&temp_handler, "getblocktemplate", gbt_args, wallet_name);
+                    const UniValue gbt_err = gbt.find_value("error");
+                    if (!gbt_err.isNull()) throw std::runtime_error(gbt_err.get_str());
+                    const UniValue gbt_res = gbt.find_value("result");
+                    const UniValue tmpl_hex = gbt_res.find_value("hex");
+                    if (tmpl_hex.isNull()) throw std::runtime_error("getblocktemplate missing 'hex'");
+                    std::string block_hex = tmpl_hex.get_str();
+                    CBlock block;
+                    if (!DecodeHexBlk(block, block_hex)) {
+                        throw std::runtime_error("failed to decode block template hex");
+                    }
+                    // Derive target from nBits
+                    arith_uint256 target; bool neg=false, of=false;
+                    target.SetCompact(block.nBits, &neg, &of);
+                    if (neg || of || target == 0) throw std::runtime_error("invalid target from nBits");
+                    // Simple nonce loop up to maxtries
+                    uint32_t start_nonce = block.nNonce;
+                    bool found = false;
+                    for (int t = 0; t < maxtries && !g_cli_stop.load(); ++t) {
+                        // Hash
+                        uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+                        local_total_hashes.fetch_add(1);
+                        if (UintToArith256(h) <= target) {
+                            found = true;
+                            break;
+                        }
+                        block.nNonce += 1;
+                        if (block.nNonce < start_nonce) {
+                            // overflow, bump time
+                            block.nTime = GetTime();
+                        }
+                    }
+                    if (found) {
+                        // Serialize block and submit
+                        std::vector<unsigned char> ser;
+                        VectorWriter(ser, 0, block);
+                        std::string mined_hex = HexStr(ser);
+                        std::vector<std::string> sub_args;
+                        sub_args.emplace_back(mined_hex);
+                        const UniValue sub = ConnectAndCallRPC(&temp_handler, "submitblock", sub_args, wallet_name);
+                        const UniValue sub_err = sub.find_value("error");
+                        if (sub_err.isNull()) {
+                            // Success (result may be null); append a placeholder hash entry
+                            result_array.push_back(block.GetHash().GetHex());
+                            ++blocks_generated;
+                        }
+                    }
+                }
+                reply.setObject();
+                reply.pushKV("result", result_array);
+                reply.pushKV("error", NullUniValue);
+            }
             
             // Parse reply
             UniValue result = reply.find_value("result");
