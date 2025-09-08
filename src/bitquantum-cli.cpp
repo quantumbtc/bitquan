@@ -1264,7 +1264,55 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     
     tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
     tfm::format(std::cout, "Blocks per iteration: %d, Max tries: %d\n", nblocks_per_iteration, maxtries);
+    // Mirror node-side startup info in CLI (thread count and target bits)
+    try {
+        const unsigned int threads = std::thread::hardware_concurrency();
+        tfm::format(std::cout, "Starting advanced RandomQ mining with %u threads...\n", threads ? threads : 1);
+        // Try to fetch target bits from getblocktemplate
+        DefaultRequestHandler temp_handler;
+        std::vector<std::string> gbt_args;
+        gbt_args.emplace_back("{}");
+        const UniValue gbt_reply = ConnectAndCallRPC(&temp_handler, "getblocktemplate", gbt_args);
+        const UniValue gbt_error = gbt_reply.find_value("error");
+        if (gbt_error.isNull()) {
+            const UniValue gbtr = gbt_reply.find_value("result");
+            if (!gbtr.isNull() && !gbtr["bits"].isNull()) {
+                tfm::format(std::cout, "Target: %s\n", gbtr["bits"].get_str());
+            }
+        }
+    } catch (...) { /* ignore target/thread print errors */ }
     tfm::format(std::cout, "Press Ctrl+C to stop mining\n");
+
+    // Start CLI-side hashrate reporter polling the node's getminingstatus
+    std::atomic<bool> stop_report{false};
+    std::thread cli_reporter([&stop_report]() {
+        DefaultRequestHandler rh;
+        uint64_t last_total_hashes = 0;
+        uint64_t last_time = 0;
+        while (!stop_report.load()) {
+            try {
+                const UniValue st = ConnectAndCallRPC(&rh, "getminingstatus", /*args=*/{});
+                const UniValue err = st.find_value("error");
+                if (err.isNull()) {
+                    const UniValue res = st.find_value("result");
+                    if (!res.isNull() && res["continuous_mining"].get_bool()) {
+                        const uint64_t total_hashes = res["total_hashes"].getInt<uint64_t>();
+                        const uint64_t mining_time = res["mining_time"].getInt<uint64_t>();
+                        const double current = res["hashrate"].get_real();
+                        const double average = mining_time > 0 ? (double)total_hashes / (double)mining_time : 0.0;
+                        if (total_hashes != last_total_hashes || mining_time != last_time) {
+                            tfm::format(std::cout,
+                                "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
+                                current, average, (unsigned long long)total_hashes);
+                            last_total_hashes = total_hashes;
+                            last_time = mining_time;
+                        }
+                    }
+                }
+            } catch (...) { /* ignore transient errors */ }
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        }
+    });
     
     int iteration = 1;
     while (true) {
@@ -1365,6 +1413,9 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
+    // Not reached in normal loop; ensure reporter is stopped if we ever exit
+    stop_report.store(true);
+    if (cli_reporter.joinable()) cli_reporter.join();
 }
 
 static int CommandLineRPC(int argc, char *argv[])
