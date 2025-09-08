@@ -1417,7 +1417,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             // Build block from getblocktemplate fields
                             // Header
                             if (!gbt_res["version"].isNull()) block.nVersion = gbt_res["version"].getInt<int>();
-                            if (!gbt_res["previousblockhash"].isNull()) block.hashPrevBlock = uint256S(gbt_res["previousblockhash"].get_str());
+                            if (!gbt_res["previousblockhash"].isNull()) block.hashPrevBlock = uint256::FromHex(gbt_res["previousblockhash"].get_str()).value_or(uint256{});
                             if (!gbt_res["curtime"].isNull()) block.nTime = gbt_res["curtime"].getInt<int>();
                             if (!gbt_res["bits"].isNull()) {
                                 const std::string bits_str = gbt_res["bits"].get_str();
