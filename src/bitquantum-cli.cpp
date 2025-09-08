@@ -1308,7 +1308,8 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
         // Try to fetch target bits from getblocktemplate
         DefaultRequestHandler temp_handler;
         std::vector<std::string> gbt_args;
-        gbt_args.emplace_back("{}");
+        // Add segwit by default; signet chains may require ["segwit","signet"].
+        gbt_args.emplace_back("{\"rules\":[\"segwit\"]}");
         const UniValue gbt_reply = ConnectAndCallRPC(&temp_handler, "getblocktemplate", gbt_args);
         const UniValue gbt_error = gbt_reply.find_value("error");
         if (gbt_error.isNull()) {
@@ -1394,7 +1395,13 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     gbt_args.emplace_back("{\"rules\":[\"segwit\"]}");
                     const UniValue gbt = ConnectAndCallRPC(&temp_handler, "getblocktemplate", gbt_args, wallet_name);
                     const UniValue gbt_err = gbt.find_value("error");
-                    if (!gbt_err.isNull()) throw std::runtime_error(gbt_err.get_str());
+                    if (!gbt_err.isNull()) {
+                        std::string emsg;
+                        if (gbt_err.isStr()) emsg = gbt_err.get_str();
+                        else if (gbt_err.isObject() && !gbt_err["message"].isNull()) emsg = gbt_err["message"].get_str();
+                        else emsg = gbt_err.write();
+                        throw std::runtime_error(emsg);
+                    }
                     const UniValue gbt_res = gbt.find_value("result");
                     const UniValue tmpl_hex = gbt_res.find_value("hex");
                     if (tmpl_hex.isNull()) throw std::runtime_error("getblocktemplate missing 'hex'");
@@ -1521,7 +1528,11 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                 // Small delay to prevent overwhelming the system
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             } else {
-                tfm::format(std::cerr, "Error in iteration %d: %s\n", iteration, error.get_str());
+                std::string emsg;
+                if (error.isStr()) emsg = error.get_str();
+                else if (error.isObject() && !error["message"].isNull()) emsg = error["message"].get_str();
+                else emsg = error.write();
+                tfm::format(std::cerr, "Error in iteration %d: %s\n", iteration, emsg);
                 // Continue mining even if there's an error
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
