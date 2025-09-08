@@ -41,6 +41,9 @@
 #include <arith_uint256.h>
 #include <uint256.h>
 #include <consensus/merkle.h>
+#include <key_io.h>
+#include <script/standard.h>
+#include <script/script.h>
 
 #ifndef WIN32
 #include <unistd.h>
@@ -1426,16 +1429,45 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             block.nNonce = 0;
                             // Transactions: coinbase + others
                             block.vtx.clear();
-                            const UniValue coinbase = gbt_res.find_value("coinbasetxn");
-                            if (coinbase.isNull() || coinbase["data"].isNull()) {
-                                throw std::runtime_error("getblocktemplate missing 'coinbasetxn'");
-                            }
-                            {
+                            const UniValue coinbasetxn = gbt_res.find_value("coinbasetxn");
+                            if (!coinbasetxn.isNull() && !coinbasetxn["data"].isNull()) {
+                                // Server provided coinbase txn hex
                                 CMutableTransaction mtx;
-                                if (!DecodeHexTx(mtx, coinbase["data"].get_str())) {
+                                if (!DecodeHexTx(mtx, coinbasetxn["data"].get_str())) {
                                     throw std::runtime_error("failed to decode coinbase txn");
                                 }
                                 block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+                            } else {
+                                // Build minimal coinbase from template fields
+                                if (gbt_res["coinbasevalue"].isNull()) {
+                                    throw std::runtime_error("getblocktemplate missing 'coinbasetxn' and 'coinbasevalue'");
+                                }
+                                const CAmount cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
+                                CMutableTransaction cb;
+                                cb.version = 1;
+                                // BIP34 height
+                                int32_t height = 0;
+                                if (!gbt_res["height"].isNull()) height = gbt_res["height"].getInt<int>();
+                                CScript sig;
+                                sig << CScriptNum(height);
+                                cb.vin.emplace_back(CTxIn(COutPoint(), sig));
+                                // payout script from address
+                                CScript payout;
+                                {
+                                    std::string addr_str = address; // use loop address
+                                    CTxDestination dest = DecodeDestination(addr_str);
+                                    if (!IsValidDestination(dest)) throw std::runtime_error("invalid mining address for coinbase");
+                                    payout = GetScriptForDestination(dest);
+                                }
+                                cb.vout.emplace_back(CTxOut(cb_value, payout));
+                                // optional witness commitment
+                                const UniValue commit = gbt_res.find_value("default_witness_commitment");
+                                if (!commit.isNull()) {
+                                    std::vector<unsigned char> data = ParseHex(commit.get_str());
+                                    CScript opret = CScript() << OP_RETURN << data;
+                                    cb.vout.emplace_back(CTxOut(0, opret));
+                                }
+                                block.vtx.push_back(MakeTransactionRef(std::move(cb)));
                             }
                             const UniValue txs = gbt_res.find_value("transactions");
                             if (txs.isArray()) {
