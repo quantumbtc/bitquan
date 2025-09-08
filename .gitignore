@@ -35,3 +35,4 @@ target/
 /cpuminer/build_windows_msvc
 /cpuminer/build_windows_mingw
 /cpuminer/build_windows
+/out
