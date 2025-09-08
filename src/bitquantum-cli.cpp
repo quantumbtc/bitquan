@@ -1327,6 +1327,13 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     const uint64_t local_start_time = GetTime();
     std::thread cli_reporter([&]() {
         DefaultRequestHandler rh;
+        // Immediate first print
+        if (client_mine) {
+            tfm::format(std::cout,
+                "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
+                0.0, 0.0, (unsigned long long)0);
+            std::cout.flush();
+        }
         while (!stop_report.load()) {
             try {
                 if (client_mine) {
@@ -1338,6 +1345,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     tfm::format(std::cout,
                         "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
                         average, average, (unsigned long long)total);
+                    std::cout.flush();
                 } else {
                     const UniValue st = ConnectAndCallRPC(&rh, "getminingstatus", /*args=*/{});
                     const UniValue err = st.find_value("error");
@@ -1351,6 +1359,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             tfm::format(std::cout,
                                 "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
                                 current, average, (unsigned long long)total_hashes);
+                            std::cout.flush();
                         }
                     }
                 }
