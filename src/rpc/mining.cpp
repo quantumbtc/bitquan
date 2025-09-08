@@ -149,7 +149,7 @@ static bool SimpleGenerateBlock(ChainstateManager& chainman, CBlock&& block, uin
     target.SetCompact(block.nBits, &neg, &of);
     if (neg || of || target == 0) return false;
 
-    const Consensus::Params& consensus = chainman.GetConsensus();
+    // consensus params unused after removing advanced mining logic
     const uint32_t start_nonce = block.nNonce;
     for (uint64_t i = 0; i < max_tries; ++i) {
         const uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
@@ -380,7 +380,7 @@ static RPCHelpMan generate()
 static RPCHelpMan stopmining()
 {
     return RPCHelpMan{"stopmining", 
-        "Stop continuous mining if it is running.",
+        "Stop continuous mining if it is running (feature removed).",
         {},
         RPCResult{
             RPCResult::Type::OBJ, "", "mining stop result",
@@ -396,17 +396,9 @@ static RPCHelpMan stopmining()
 {
     UniValue result(UniValue::VOBJ);
     
-    if (StopContinuousMining()) {
-        uint64_t blocks_mined = g_blocks_mined.load();
-        result.pushKV("stopped", true);
-        result.pushKV("message", "Continuous mining stopped successfully");
-        result.pushKV("blocks_mined", (int64_t)blocks_mined);
-        std::cout << "Continuous mining stopped. Total blocks mined: " << blocks_mined << std::endl;
-    } else {
-        result.pushKV("stopped", false);
-        result.pushKV("message", "No continuous mining was running");
-        result.pushKV("blocks_mined", 0);
-    }
+    result.pushKV("stopped", false);
+    result.pushKV("message", "Continuous mining feature removed");
+    result.pushKV("blocks_mined", 0);
     
     return result;
 },
