@@ -28,11 +28,7 @@
 #include <crypto/randomq_mining.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
-#include <thread>
 #include <chrono>
-#include <atomic>
-#include <mutex>
-#include <iomanip>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
@@ -141,141 +137,36 @@ static RPCHelpMan getnetworkhashps()
     };
 }
 
-// Advanced mining related global variables
-std::atomic<bool> g_mining_found(false);
-std::mutex g_mining_print_mutex;
-CBlock g_found_block;
-std::atomic<uint64_t> g_mining_total_hashes(0);
-std::atomic<uint64_t> g_mining_start_time(0);
-
-// Continuous mining control variables
-std::atomic<bool> g_continuous_mining(false);
-std::atomic<bool> g_stop_mining(false);
-std::thread g_continuous_mining_thread;
-std::mutex g_continuous_mining_mutex;
-std::string g_mining_address;
-std::atomic<uint64_t> g_blocks_mined(0);
-
-// Hash rate reporter thread function
-void MiningHashRateReporter() {
-    uint64_t lastTotalHashes = 0;
-    uint64_t lastReportTime = g_mining_start_time.load();
-    
-    while (!g_mining_found.load()) {
-        std::this_thread::sleep_for(std::chrono::seconds(5)); // report every 5 seconds
-        
-        uint64_t currentTime = GetTime();
-        uint64_t currentTotalHashes = g_mining_total_hashes.load();
-        
-        if (currentTime > lastReportTime && currentTotalHashes > lastTotalHashes) {
-            uint64_t timeDiff = currentTime - lastReportTime;
-            uint64_t hashDiff = currentTotalHashes - lastTotalHashes;
-            double hashrate = (double)hashDiff / timeDiff;
-            double totalHashrate = (double)currentTotalHashes / (currentTime - g_mining_start_time.load());
-            
-            std::lock_guard<std::mutex> lock(g_mining_print_mutex);
-            std::cout << "[Mining HashRate] Current: " << std::fixed << std::setprecision(2) << hashrate 
-                      << " H/s | Average: " << std::fixed << std::setprecision(2) << totalHashrate 
-                      << " H/s | Total: " << currentTotalHashes << " hashes" << std::endl;
-            
-            lastTotalHashes = currentTotalHashes;
-            lastReportTime = currentTime;
-        }
-    }
-}
-
-// Mining thread function
-void MiningThread(CBlock block, const Consensus::Params& consensus, uint32_t threadId) {
-    while (!g_mining_found.load()) {
-        bool mined = RandomQMining::FindRandomQNonce(
-            block,
-            block.nBits,
-            consensus.powLimit);
-
-        // Count hash attempts
-        g_mining_total_hashes.fetch_add(1);
-
-        if (mined && RandomQMining::CheckRandomQProofOfWork(block, block.nBits, consensus.powLimit)) {
-            if (!g_mining_found.exchange(true)) {
-                g_found_block = block;
-                
-                std::lock_guard<std::mutex> lock(g_mining_print_mutex);
-                std::cout << "[Mining Thread " << threadId << "] Block found"
-                          << ": nonce=" << block.nNonce
-                          << " hash=" << block.GetHash().ToString()
-                          << " merkle=" << block.hashMerkleRoot.ToString()
-                          << " bits=" << std::hex << std::setw(8) << std::setfill('0') << block.nBits << std::dec
-                          << " time=" << block.nTime
-                          << std::endl;
-            }
-            return;
-        }
-
-        // If not found, continue trying by incrementing the nonce
-        block.nNonce += 1;
-        block.nTime = GetTime();
-    }
-}
-
-// Advanced multi-threaded mining function
-static bool AdvancedGenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
+// Advanced mining threads and statistics removed.
+// Provide a minimal, single-threaded nonce search without any logging.
+static bool SimpleGenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    // Initialize mining state
-    g_mining_start_time.store(GetTime());
-    g_mining_total_hashes.store(0);
-    g_mining_found.store(false);
+    // Derive target
+    arith_uint256 target; bool neg{false}, of{false};
+    target.SetCompact(block.nBits, &neg, &of);
+    if (neg || of || target == 0) return false;
 
-    const int numThreads = std::thread::hardware_concurrency();
-    std::cout << "Starting advanced RandomQ mining with " << numThreads << " threads..." << std::endl;
-    std::cout << "Target: " << std::hex << std::setw(8) << std::setfill('0') << block.nBits << std::dec << std::endl;
-
-    std::vector<std::thread> threads;
-
-    // Start hash rate reporter thread
-    std::thread reporterThread(MiningHashRateReporter);
-
-    for (int i = 0; i < numThreads; ++i) {
-        CBlock thread_block = block; // independent copy per thread
-        thread_block.nNonce = i * 1000000ULL; // avoid nonce overlap
-        threads.emplace_back(MiningThread, thread_block, chainman.GetConsensus(), i);
-    }
-
-    for (auto& t : threads) {
-        if (t.joinable()) t.join();
-    }
-
-    // Wait for reporter thread to finish
-    if (reporterThread.joinable()) {
-        reporterThread.join();
-    }
-
-    // Display final statistics
-    uint64_t totalTime = GetTime() - g_mining_start_time.load();
-    double finalHashrate = (double)g_mining_total_hashes.load() / totalTime;
-    
-    std::cout << "Mining finished." << std::endl;
-    std::cout << "Final Statistics:" << std::endl;
-    std::cout << "  Total hashes: " << g_mining_total_hashes.load() << std::endl;
-    std::cout << "  Total time: " << totalTime << " seconds" << std::endl;
-    std::cout << "  Average hash rate: " << std::fixed << std::setprecision(2) << finalHashrate << " H/s" << std::endl;
-
-    // Use the found block
-    if (g_mining_found.load()) {
-        block = g_found_block;
-        block_out = std::make_shared<const CBlock>(std::move(block));
-
-        if (!process_new_block) return true;
-
-        if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+    const Consensus::Params& consensus = chainman.GetConsensus();
+    const uint32_t start_nonce = block.nNonce;
+    for (uint64_t i = 0; i < max_tries; ++i) {
+        const uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+        if (UintToArith256(h) <= target) {
+            // Found
+            block_out = std::make_shared<const CBlock>(block);
+            if (!process_new_block) return true;
+            if (!chainman.ProcessNewBlock(block_out, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr)) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+            }
+            return true;
         }
-
-        return true;
+        block.nNonce += 1;
+        if (block.nNonce < start_nonce) {
+            block.nTime = GetTime();
+        }
     }
-
     return false;
 }
 
@@ -417,8 +308,7 @@ UniValue GetMiningStatus() {
 
 static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
-    // Use advanced multi-threaded mining algorithm
-    return AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block);
+    return SimpleGenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block);
 }
 
 static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script, int nGenerate, uint64_t nMaxTries)
@@ -666,21 +556,10 @@ static RPCHelpMan generatetoaddress()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const int num_blocks{request.params[0].getInt<int>()};
-    const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
-
-    CTxDestination destination = DecodeDestination(request.params[1].get_str());
-    if (!IsValidDestination(destination)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
-    }
-
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    Mining& miner = EnsureMining(node);
-    ChainstateManager& chainman = EnsureChainman(node);
-
-    CScript coinbase_output_script = GetScriptForDestination(destination);
-
-    return generateBlocks(chainman, miner, coinbase_output_script, num_blocks, max_tries);
+    // Node-side mining is disabled. Direct users to CLI client-mining via RPC.
+    throw JSONRPCError(RPC_MISC_ERROR,
+        "Node mining disabled. Use CLI client mining: 'bitquantum-cli -generate loop -clientmine'\n"
+        "CLI will use getblocktemplate/submitblock over RPC.");
 },
     };
 }
