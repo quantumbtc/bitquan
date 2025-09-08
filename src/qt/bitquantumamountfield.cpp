@@ -223,7 +223,9 @@ BitquantumAmountField::BitquantumAmountField(QWidget* parent)
     amount = new AmountSpinBox(this);
     amount->setLocale(QLocale::c());
     amount->installEventFilter(this);
-    amount->setMaximumWidth(480);
+    amount->setMaximumWidth(680);
+    amount->setMinimumWidth(320);
+    amount->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     QHBoxLayout *layout = new QHBoxLayout(this);
     layout->addWidget(amount);
@@ -232,6 +234,8 @@ BitquantumAmountField::BitquantumAmountField(QWidget* parent)
     layout->addWidget(unit);
     layout->addStretch(1);
     layout->setContentsMargins(0,0,0,0);
+    layout->setStretch(0, 1); // amount field expands
+    layout->setStretch(1, 0); // unit combo keeps natural size
 
     setLayout(layout);
 
