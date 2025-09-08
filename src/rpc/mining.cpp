@@ -198,113 +198,17 @@ static bool getScriptFromAddress(const std::string& address, CScript& script, st
     return true;
 }
 
-// Continuous mining worker thread function
-void ContinuousMiningWorker(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script) {
-    std::cout << "Starting continuous mining to address..." << std::endl;
-    g_blocks_mined.store(0);
-    
-    while (g_continuous_mining.load() && !g_stop_mining.load()) {
-        try {
-            // Create new block template
-            std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ 
-                .coinbase_output_script = coinbase_output_script 
-            }));
-            
-            if (!block_template) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
-            
-            CBlock block = block_template->getBlock();
-            std::shared_ptr<const CBlock> block_out;
-            uint64_t max_tries = DEFAULT_MAX_TRIES;
-            
-            // Mine using advanced algorithm
-            if (AdvancedGenerateBlock(chainman, std::move(block), max_tries, block_out, true)) {
-                g_blocks_mined.fetch_add(1);
-                uint64_t total_blocks = g_blocks_mined.load();
-                
-                std::lock_guard<std::mutex> lock(g_mining_print_mutex);
-                std::cout << "[Continuous Mining] Block #" << total_blocks 
-                          << " mined: " << block_out->GetHash().ToString() << std::endl;
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        } catch (const std::exception& e) {
-            std::lock_guard<std::mutex> lock(g_mining_print_mutex);
-            std::cout << "[Continuous Mining] Error: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-    }
-    
-    std::lock_guard<std::mutex> lock(g_mining_print_mutex);
-    std::cout << "Continuous mining stopped. Total blocks mined: " << g_blocks_mined.load() << std::endl;
-}
+// Continuous mining functionality removed
+static void ContinuousMiningWorker(ChainstateManager&, Mining&, const CScript&) {}
 
 // Start continuous mining
-bool StartContinuousMining(ChainstateManager& chainman, Mining& miner, const std::string& address) {
-    std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
-    
-    if (g_continuous_mining.load()) {
-        return false; // already mining
-    }
-    
-    // Parse address
-    CScript coinbase_output_script;
-    std::string error;
-    if (!getScriptFromAddress(address, coinbase_output_script, error)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
-    }
-    
-    g_mining_address = address;
-    g_continuous_mining.store(true);
-    g_stop_mining.store(false);
-    
-    // Start continuous mining thread
-    g_continuous_mining_thread = std::thread(ContinuousMiningWorker, 
-                                            std::ref(chainman), 
-                                            std::ref(miner), 
-                                            coinbase_output_script);
-    
-    return true;
-}
+static bool StartContinuousMining(ChainstateManager&, Mining&, const std::string&) { return false; }
 
 // Stop continuous mining
-bool StopContinuousMining() {
-    std::lock_guard<std::mutex> lock(g_continuous_mining_mutex);
-    
-    if (!g_continuous_mining.load()) {
-        return false; // not mining
-    }
-    
-    g_stop_mining.store(true);
-    g_continuous_mining.store(false);
-    
-    // Wait for mining thread to finish
-    if (g_continuous_mining_thread.joinable()) {
-        g_continuous_mining_thread.join();
-    }
-    
-    return true;
-}
+static bool StopContinuousMining() { return false; }
 
 // Get mining status
-UniValue GetMiningStatus() {
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("continuous_mining", g_continuous_mining.load());
-    result.pushKV("blocks_mined", (int64_t)g_blocks_mined.load());
-    result.pushKV("mining_address", g_mining_address);
-    
-    if (g_continuous_mining.load()) {
-        uint64_t totalTime = GetTime() - g_mining_start_time.load();
-        double hashrate = totalTime > 0 ? (double)g_mining_total_hashes.load() / totalTime : 0.0;
-        result.pushKV("total_hashes", (int64_t)g_mining_total_hashes.load());
-        result.pushKV("mining_time", (int64_t)totalTime);
-        result.pushKV("hashrate", hashrate);
-    }
-    
-    return result;
-}
+static UniValue GetMiningStatus() { UniValue obj(UniValue::VOBJ); return obj; }
 
 static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
 {
