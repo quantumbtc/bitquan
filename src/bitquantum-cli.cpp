@@ -1331,9 +1331,9 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     const bool client_mine = gArgs.GetBoolArg("-clientmine", DEFAULT_CLIENT_MINE);
     std::atomic<bool> stop_report{false};
     std::atomic<uint64_t> local_total_hashes{0};
-    const uint64_t local_start_time = GetTime();
+    const uint64_t local_start_time = static_cast<uint64_t>(GetTime());
     std::atomic<uint64_t> prev_total_hashes{0};
-    std::atomic<uint64_t> prev_time{GetTime()};
+    std::atomic<uint64_t> prev_time{static_cast<uint64_t>(GetTime())};
     std::thread cli_reporter([&]() {
         DefaultRequestHandler rh;
         // Immediate first print
@@ -1346,7 +1346,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
         while (!stop_report.load()) {
             try {
                 if (client_mine) {
-                    const uint64_t now = GetTime();
+                    const uint64_t now = static_cast<uint64_t>(GetTime());
                     const uint64_t elapsed = now > local_start_time ? (now - local_start_time) : 0;
                     const uint64_t total = local_total_hashes.load();
                     const double average = elapsed > 0 ? (double)total / (double)elapsed : 0.0;
@@ -1569,7 +1569,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         block.nNonce += 1;
                         if (block.nNonce < start_nonce) {
                             // overflow, bump time
-                            block.nTime = GetTime();
+                            block.nTime = static_cast<uint32_t>(GetTime());
                         }
                     }
                     if (found) {
