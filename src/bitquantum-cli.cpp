@@ -1396,7 +1396,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         // Serialize block and submit
                         std::vector<unsigned char> ser;
                         {
-                            ParamsStream vw{VectorWriter(ser, 0), TransactionSerParams::TX_WITH_WITNESS};
+                            ParamsStream vw{VectorWriter(ser, 0), TX_WITH_WITNESS};
                             vw << block;
                         }
                         std::string mined_hex = HexStr(ser);
