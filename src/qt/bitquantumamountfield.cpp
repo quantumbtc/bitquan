@@ -223,7 +223,7 @@ BitquantumAmountField::BitquantumAmountField(QWidget* parent)
     amount = new AmountSpinBox(this);
     amount->setLocale(QLocale::c());
     amount->installEventFilter(this);
-    amount->setMaximumWidth(680);
+    amount->setMaximumWidth(480);
     amount->setMinimumWidth(320);
     amount->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
