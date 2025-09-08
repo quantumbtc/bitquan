@@ -34,6 +34,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <csignal>
 
 #ifndef WIN32
 #include <unistd.h>
@@ -1250,6 +1251,12 @@ static void SetGenerateToAddressArgs(const std::string& address, std::vector<std
 
 static void StartLoopMining(const std::string& address, const std::vector<std::string>& args)
 {
+    // Install Ctrl+C handler to stop loop cleanly
+    static std::atomic<bool> g_cli_stop{false};
+    std::signal(SIGINT, [](int){ g_cli_stop.store(true); });
+#ifdef SIGTERM
+    std::signal(SIGTERM, [](int){ g_cli_stop.store(true); });
+#endif
     // Parse arguments for loop mining
     // args[0] = "loop", args[1] = nblocks, args[2] = maxtries
     int nblocks_per_iteration = 1;
@@ -1295,18 +1302,16 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                 const UniValue err = st.find_value("error");
                 if (err.isNull()) {
                     const UniValue res = st.find_value("result");
-                    if (!res.isNull() && res["continuous_mining"].get_bool()) {
+                    if (!res.isNull() && !res["total_hashes"].isNull() && !res["mining_time"].isNull() && !res["hashrate"].isNull()) {
                         const uint64_t total_hashes = res["total_hashes"].getInt<uint64_t>();
                         const uint64_t mining_time = res["mining_time"].getInt<uint64_t>();
                         const double current = res["hashrate"].get_real();
                         const double average = mining_time > 0 ? (double)total_hashes / (double)mining_time : 0.0;
-                        if (total_hashes != last_total_hashes || mining_time != last_time) {
-                            tfm::format(std::cout,
-                                "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
-                                current, average, (unsigned long long)total_hashes);
-                            last_total_hashes = total_hashes;
-                            last_time = mining_time;
-                        }
+                        tfm::format(std::cout,
+                            "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
+                            current, average, (unsigned long long)total_hashes);
+                        last_total_hashes = total_hashes;
+                        last_time = mining_time;
                     }
                 }
             } catch (...) { /* ignore transient errors */ }
@@ -1317,6 +1322,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     int iteration = 1;
     while (true) {
         try {
+            if (g_cli_stop.load()) break;
             // Prepare arguments for this iteration
             std::vector<std::string> loop_args;
             loop_args.push_back(std::to_string(nblocks_per_iteration));
@@ -1416,6 +1422,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     // Not reached in normal loop; ensure reporter is stopped if we ever exit
     stop_report.store(true);
     if (cli_reporter.joinable()) cli_reporter.join();
+    tfm::format(std::cout, "Stopped mining (Ctrl+C).\n");
 }
 
 static int CommandLineRPC(int argc, char *argv[])
