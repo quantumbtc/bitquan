@@ -1299,6 +1299,54 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             tfm::format(std::cout, "  Last block: %s\n", result[blocks_generated-1].get_str());
                         }
                     }
+                    // Query and print real-time mining stats (CLI-only)
+                    try {
+                        // difficulty from getblockchaininfo
+                        const UniValue bcinfo_reply = ConnectAndCallRPC(&temp_handler, "getblockchaininfo", /*args=*/{}, wallet_name);
+                        const UniValue bcinfo_error = bcinfo_reply.find_value("error");
+                        double difficulty = 0.0;
+                        if (bcinfo_error.isNull()) {
+                            const UniValue bcres = bcinfo_reply.find_value("result");
+                            if (!bcres.isNull() && !bcres["difficulty"].isNull()) {
+                                difficulty = bcres["difficulty"].get_real();
+                            }
+                        }
+
+                        // network hashrate via getmininginfo or getnetworkhashps
+                        double network_hashps = 0.0;
+                        {
+                            const UniValue mi_reply = ConnectAndCallRPC(&temp_handler, "getmininginfo", /*args=*/{}, wallet_name);
+                            const UniValue mi_error = mi_reply.find_value("error");
+                            if (mi_error.isNull()) {
+                                const UniValue mires = mi_reply.find_value("result");
+                                if (!mires.isNull() && !mires["networkhashps"].isNull()) {
+                                    network_hashps = mires["networkhashps"].get_real();
+                                }
+                            }
+                        }
+                        if (network_hashps == 0.0) {
+                            const UniValue nh_reply = ConnectAndCallRPC(&temp_handler, "getnetworkhashps", /*args=*/{}, wallet_name);
+                            const UniValue nh_error = nh_reply.find_value("error");
+                            if (nh_error.isNull()) {
+                                const UniValue nhres = nh_reply.find_value("result");
+                                if (!nhres.isNull()) {
+                                    if (nhres.isNum()) network_hashps = nhres.get_real();
+                                }
+                            }
+                        }
+
+                        // Pretty print
+                        auto human_hashrate = [](double hps) -> std::string {
+                            const char* units[] = {"H/s","kH/s","MH/s","GH/s","TH/s","PH/s","EH/s"};
+                            int idx = 0;
+                            while (hps >= 1000.0 && idx < 6) { hps /= 1000.0; ++idx; }
+                            return strprintf("%.3f %s", hps, units[idx]);
+                        };
+                        tfm::format(std::cout, "  Difficulty: %.8g\n", difficulty);
+                        tfm::format(std::cout, "  Network hashrate: %s\n", human_hashrate(network_hashps));
+                    } catch (const std::exception& e_stats) {
+                        tfm::format(std::cerr, "  Stats query failed: %s\n", e_stats.what());
+                    }
                 } else {
                     tfm::format(std::cout, "Iteration %d: Generated blocks (result type: %d)\n", iteration, result.getType());
                 }
