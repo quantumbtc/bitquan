@@ -1265,15 +1265,38 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     std::signal(SIGTERM, [](int){ g_cli_stop.store(true); });
 #endif
     // Parse arguments for loop mining
-    // args[0] = "loop", args[1] = nblocks, args[2] = maxtries
+    // args layout may include flags (e.g. -clientmine). Extract numeric args safely.
     int nblocks_per_iteration = 1;
     int maxtries = 1000000;
-    
-    if (args.size() > 1) {
-        nblocks_per_iteration = std::stoi(args.at(1));
-    }
-    if (args.size() > 2) {
-        maxtries = std::stoi(args.at(2));
+    int found_numeric = 0;
+    for (size_t i = 1; i < args.size(); ++i) {
+        const std::string& tok = args[i];
+        // skip switches
+        if (!tok.empty() && tok[0] == '-') continue;
+        // parse integer if numeric
+        int val = 0;
+        bool ok = false;
+        {
+            const char* s = tok.c_str();
+            char* endp = nullptr;
+            long v = std::strtol(s, &endp, 10);
+            if (endp && *endp == '\0') {
+                ok = true;
+                if (v < 0) v = 0;
+                if (v > std::numeric_limits<int>::max()) v = std::numeric_limits<int>::max();
+                val = static_cast<int>(v);
+            }
+        }
+        if (!ok) continue;
+        if (found_numeric == 0) {
+            if (val > 0) nblocks_per_iteration = val;
+            found_numeric++;
+        } else if (found_numeric == 1) {
+            if (val > 0) maxtries = val;
+            found_numeric++;
+        } else {
+            break;
+        }
     }
     
     tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
