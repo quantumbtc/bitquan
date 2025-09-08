@@ -40,6 +40,7 @@
 #include <crypto/randomq_mining.h>
 #include <arith_uint256.h>
 #include <uint256.h>
+#include <consensus/merkle.h>
 
 #ifndef WIN32
 #include <unistd.h>
@@ -1403,12 +1404,52 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         throw std::runtime_error(emsg);
                     }
                     const UniValue gbt_res = gbt.find_value("result");
-                    const UniValue tmpl_hex = gbt_res.find_value("hex");
-                    if (tmpl_hex.isNull()) throw std::runtime_error("getblocktemplate missing 'hex'");
-                    std::string block_hex = tmpl_hex.get_str();
                     CBlock block;
-                    if (!DecodeHexBlk(block, block_hex)) {
-                        throw std::runtime_error("failed to decode block template hex");
+                    {
+                        const UniValue tmpl_hex = gbt_res.find_value("hex");
+                        if (!tmpl_hex.isNull()) {
+                            // Fast path: server provided full block hex
+                            std::string block_hex = tmpl_hex.get_str();
+                            if (!DecodeHexBlk(block, block_hex)) {
+                                throw std::runtime_error("failed to decode block template hex");
+                            }
+                        } else {
+                            // Build block from getblocktemplate fields
+                            // Header
+                            if (!gbt_res["version"].isNull()) block.nVersion = gbt_res["version"].getInt<int>();
+                            if (!gbt_res["previousblockhash"].isNull()) block.hashPrevBlock = uint256S(gbt_res["previousblockhash"].get_str());
+                            if (!gbt_res["curtime"].isNull()) block.nTime = gbt_res["curtime"].getInt<int>();
+                            if (!gbt_res["bits"].isNull()) {
+                                const std::string bits_str = gbt_res["bits"].get_str();
+                                block.nBits = static_cast<uint32_t>(std::stoul(bits_str, nullptr, 16));
+                            }
+                            block.nNonce = 0;
+                            // Transactions: coinbase + others
+                            block.vtx.clear();
+                            const UniValue coinbase = gbt_res.find_value("coinbasetxn");
+                            if (coinbase.isNull() || coinbase["data"].isNull()) {
+                                throw std::runtime_error("getblocktemplate missing 'coinbasetxn'");
+                            }
+                            {
+                                CMutableTransaction mtx;
+                                if (!DecodeHexTx(mtx, coinbase["data"].get_str())) {
+                                    throw std::runtime_error("failed to decode coinbase txn");
+                                }
+                                block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+                            }
+                            const UniValue txs = gbt_res.find_value("transactions");
+                            if (txs.isArray()) {
+                                for (const UniValue& txo : txs.getValues()) {
+                                    if (txo["data"].isNull()) continue;
+                                    CMutableTransaction mtx;
+                                    if (!DecodeHexTx(mtx, txo["data"].get_str())) {
+                                        throw std::runtime_error("failed to decode tx from template");
+                                    }
+                                    block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+                                }
+                            }
+                            block.hashMerkleRoot = BlockMerkleRoot(block);
+                        }
                     }
                     // Derive target from nBits
                     arith_uint256 target; bool neg=false, of=false;
