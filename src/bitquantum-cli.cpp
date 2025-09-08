@@ -38,11 +38,13 @@
 #include <core_io.h>
 #include <streams.h>
 #include <crypto/randomq_mining.h>
+#include <crypto/hex_base.h>
 #include <arith_uint256.h>
 #include <uint256.h>
 #include <consensus/merkle.h>
+#include <consensus/amount.h>
 #include <key_io.h>
-#include <script/standard.h>
+#include <addresstype.h>
 #include <script/script.h>
 
 #ifndef WIN32
@@ -1330,6 +1332,8 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     std::atomic<bool> stop_report{false};
     std::atomic<uint64_t> local_total_hashes{0};
     const uint64_t local_start_time = GetTime();
+    std::atomic<uint64_t> prev_total_hashes{0};
+    std::atomic<uint64_t> prev_time{GetTime()};
     std::thread cli_reporter([&]() {
         DefaultRequestHandler rh;
         // Immediate first print
@@ -1346,11 +1350,20 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     const uint64_t elapsed = now > local_start_time ? (now - local_start_time) : 0;
                     const uint64_t total = local_total_hashes.load();
                     const double average = elapsed > 0 ? (double)total / (double)elapsed : 0.0;
-                    // Approximate current rate as average over last window (simple)
+                    
+                    // Calculate current rate over last 5 seconds
+                    const uint64_t window_elapsed = now > prev_time.load() ? (now - prev_time.load()) : 0;
+                    const uint64_t window_hashes = total > prev_total_hashes.load() ? (total - prev_total_hashes.load()) : 0;
+                    const double current = window_elapsed > 0 ? (double)window_hashes / (double)window_elapsed : 0.0;
+                    
                     tfm::format(std::cout,
                         "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
-                        average, average, (unsigned long long)total);
+                        current, average, (unsigned long long)total);
                     std::cout.flush();
+                    
+                    // Update window tracking
+                    prev_total_hashes.store(total);
+                    prev_time.store(now);
                 } else {
                     const UniValue st = ConnectAndCallRPC(&rh, "getminingstatus", /*args=*/{});
                     const UniValue err = st.find_value("error");
@@ -1395,8 +1408,34 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                 UniValue result_array(UniValue::VARR);
                 for (int bi = 0; bi < nblocks_per_iteration; ++bi) {
                     if (g_cli_stop.load()) break;
+                    // Auto-detect chain type for getblocktemplate rules
                     std::vector<std::string> gbt_args;
-                    gbt_args.emplace_back("{\"rules\":[\"segwit\"]}");
+                    std::string rules;
+                    {
+                        // Check if this is signet by querying blockchain info
+                        try {
+                            const UniValue bcinfo_reply = ConnectAndCallRPC(&temp_handler, "getblockchaininfo", /*args=*/{}, wallet_name);
+                            const UniValue bcinfo_error = bcinfo_reply.find_value("error");
+                            if (bcinfo_error.isNull()) {
+                                const UniValue bcres = bcinfo_reply.find_value("result");
+                                if (!bcres.isNull() && !bcres["chain"].isNull()) {
+                                    const std::string chain = bcres["chain"].get_str();
+                                    if (chain == "signet") {
+                                        rules = "{\"rules\":[\"segwit\",\"signet\"]}";
+                                    } else {
+                                        rules = "{\"rules\":[\"segwit\"]}";
+                                    }
+                                } else {
+                                    rules = "{\"rules\":[\"segwit\"]}";
+                                }
+                            } else {
+                                rules = "{\"rules\":[\"segwit\"]}";
+                            }
+                        } catch (...) {
+                            rules = "{\"rules\":[\"segwit\"]}";
+                        }
+                    }
+                    gbt_args.emplace_back(rules);
                     const UniValue gbt = ConnectAndCallRPC(&temp_handler, "getblocktemplate", gbt_args, wallet_name);
                     const UniValue gbt_err = gbt.find_value("error");
                     if (!gbt_err.isNull()) {
@@ -1466,13 +1505,42 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                     std::vector<unsigned char> data = ParseHex(commit.get_str());
                                     CScript opret = CScript() << OP_RETURN << data;
                                     cb.vout.emplace_back(CTxOut(0, opret));
+                                    // Set witness reserved value for coinbase
+                                    if (!cb.vin.empty()) {
+                                        cb.vin[0].scriptWitness.stack.resize(1);
+                                        cb.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
+                                    }
                                 }
                                 block.vtx.push_back(MakeTransactionRef(std::move(cb)));
                             }
                             const UniValue txs = gbt_res.find_value("transactions");
                             if (txs.isArray()) {
                                 for (const UniValue& txo : txs.getValues()) {
-                                    if (txo["data"].isNull()) continue;
+                                    if (txo["data"].isNull()) {
+                                        // Fallback: try to get transaction via getrawtransaction
+                                        if (!txo["txid"].isNull()) {
+                                            try {
+                                                std::vector<std::string> grt_args;
+                                                grt_args.emplace_back(txo["txid"].get_str());
+                                                grt_args.emplace_back("false"); // hex format
+                                                const UniValue grt_reply = ConnectAndCallRPC(&temp_handler, "getrawtransaction", grt_args, wallet_name);
+                                                const UniValue grt_error = grt_reply.find_value("error");
+                                                if (grt_error.isNull()) {
+                                                    const UniValue grt_res = grt_reply.find_value("result");
+                                                    if (!grt_res.isNull()) {
+                                                        CMutableTransaction mtx;
+                                                        if (DecodeHexTx(mtx, grt_res.get_str())) {
+                                                            block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+                                                            continue;
+                                                        }
+                                                    }
+                                                }
+                                            } catch (...) {
+                                                // Continue without this transaction
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     CMutableTransaction mtx;
                                     if (!DecodeHexTx(mtx, txo["data"].get_str())) {
                                         throw std::runtime_error("failed to decode tx from template");
