@@ -43,6 +43,7 @@
 #include <arith_uint256.h>
 #include <uint256.h>
 #include <consensus/merkle.h>
+#include <crypto/sha256.h>
 #include <consensus/amount.h>
 #include <key_io.h>
 #include <addresstype.h>
@@ -1517,18 +1518,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                     payout = GetScriptForDestination(dest);
                                 }
                                 cb.vout.emplace_back(CTxOut(cb_value, payout));
-                                // optional witness commitment
-                                const UniValue commit = gbt_res.find_value("default_witness_commitment");
-                                if (!commit.isNull()) {
-                                    std::vector<unsigned char> data = ParseHex(commit.get_str());
-                                    CScript opret = CScript() << OP_RETURN << data;
-                                    cb.vout.emplace_back(CTxOut(0, opret));
-                                    // Set witness reserved value for coinbase
-                                    if (!cb.vin.empty()) {
-                                        cb.vin[0].scriptWitness.stack.resize(1);
-                                        cb.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
-                                    }
-                                }
+                                // We'll add witness commitment after all transactions are added
                                 block.vtx.push_back(MakeTransactionRef(std::move(cb)));
                             }
                             const UniValue txs = gbt_res.find_value("transactions");
@@ -1565,6 +1555,28 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                     }
                                     block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
                                 }
+                            }
+                            // Calculate witness commitment if needed
+                            const UniValue commit = gbt_res.find_value("default_witness_commitment");
+                            if (!commit.isNull() && !block.vtx.empty()) {
+                                // Calculate witness merkle root
+                                uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
+                                // Create witness commitment
+                                uint256 commitment = Hash(witness_merkle_root, witness_merkle_root);
+                                std::vector<unsigned char> commitment_data(commitment.begin(), commitment.end());
+                                CScript opret = CScript() << OP_RETURN << commitment_data;
+                                
+                                // Add witness commitment to coinbase
+                                CMutableTransaction coinbase_mtx = *block.vtx[0];
+                                coinbase_mtx.vout.emplace_back(CTxOut(0, opret));
+                                
+                                // Set witness reserved value for coinbase
+                                if (!coinbase_mtx.vin.empty()) {
+                                    coinbase_mtx.vin[0].scriptWitness.stack.resize(1);
+                                    coinbase_mtx.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
+                                }
+                                
+                                block.vtx[0] = MakeTransactionRef(std::move(coinbase_mtx));
                             }
                             block.hashMerkleRoot = BlockMerkleRoot(block);
                         }
