@@ -6,6 +6,7 @@
 #include <bitquantum-build-config.h> // IWYU pragma: keep
 
 #include <chainparamsbase.h>
+#include <chainparams.h>
 #include <clientversion.h>
 #include <common/args.h>
 #include <common/system.h>
@@ -202,6 +203,7 @@ static int AppInitRPC(int argc, char* argv[])
     // Check for chain settings (BaseParams() calls are only valid after this clause)
     try {
         SelectBaseParams(gArgs.GetChainType());
+        SelectParams(gArgs.GetChainType());
     } catch (const std::exception& e) {
         tfm::format(std::cerr, "Error: %s\n", e.what());
         return EXIT_FAILURE;
