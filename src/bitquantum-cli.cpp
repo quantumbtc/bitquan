@@ -1446,6 +1446,12 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         throw std::runtime_error(emsg);
                     }
                     const UniValue gbt_res = gbt.find_value("result");
+                    if (gbt_res.isNull()) {
+                        throw std::runtime_error("getblocktemplate returned null result");
+                    }
+                    // Debug: print getblocktemplate response for troubleshooting
+                    tfm::format(std::cout, "Debug: getblocktemplate returned %d fields\n", (int)gbt_res.getKeys().size());
+                    std::cout.flush();
                     CBlock block;
                     {
                         const UniValue tmpl_hex = gbt_res.find_value("hex");
@@ -1478,10 +1484,20 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                 block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
                             } else {
                                 // Build minimal coinbase from template fields
+                                CAmount cb_value;
                                 if (gbt_res["coinbasevalue"].isNull()) {
-                                    throw std::runtime_error("getblocktemplate missing 'coinbasetxn' and 'coinbasevalue'");
+                                    // Debug: print what we actually got from getblocktemplate
+                                    std::string debug_info = "getblocktemplate response fields: ";
+                                    for (const auto& key : gbt_res.getKeys()) {
+                                        debug_info += key + " ";
+                                    }
+                                    tfm::format(std::cout, "Warning: %s. Using default coinbase value.\n", debug_info.c_str());
+                                    std::cout.flush();
+                                    // Use a reasonable default coinbase value (50 BTQ in satoshis)
+                                    cb_value = 5000000000; // 50 BTQ
+                                } else {
+                                    cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
                                 }
-                                const CAmount cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
                                 CMutableTransaction cb;
                                 cb.version = 1;
                                 // BIP34 height
