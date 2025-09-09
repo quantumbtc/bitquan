@@ -1504,16 +1504,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     int nblocks_per_iteration = 1;
     int maxtries = 1000000;
     int cpucore_count = -1; // optional CPU affinity: bind to first N cores
-    int found_numeric = 0;
-    for (size_t i = 1; i < args.size(); ++i) {
-        const std::string& tok = args[i];
-        // handle switches
-        if (!tok.empty() && tok[0] == '-') {
-            continue; // other switches are handled by gArgs
-        }
-        // parse integer if numeric
-        int val = 0;
-        bool ok = false;
+    
     // Prefer global arg manager for CPU core binding setting
     {
         const std::string cc = gArgs.GetArg("-cpucore", "");
@@ -1527,6 +1518,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     }
     
     // Parse numeric arguments for nblocks and maxtries
+    int found_numeric = 0;
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& tok = args[i];
         // handle switches
