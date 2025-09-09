@@ -270,65 +270,6 @@ public:
     }
 };
 
-// Persistent mining worker thread
-static void PersistentMiningWorker(int core_index, 
-                                 std::atomic<bool>& global_stop,
-                                 std::atomic<uint64_t>& total_hashes,
-                                 std::atomic<bool>& found_flag,
-                                 std::atomic<uint32_t>& found_nonce,
-                                 std::atomic<arith_uint256*>& current_target,
-                                 std::atomic<CBlock*>& current_block_template,
-                                 std::atomic<bool>& new_work_available)
-{
-    // Set CPU affinity for this worker thread
-    SetThreadCpuCore(core_index);
-    
-    tfm::format(std::cout, "Worker thread %d started on CPU core %d\n", core_index, core_index);
-    std::cout.flush();
-    
-    while (!global_stop.load()) {
-        // Wait for new work
-        while (!new_work_available.load() && !global_stop.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        
-        if (global_stop.load()) break;
-        
-        // Get current work
-        CBlock* block_template = current_block_template.load();
-        arith_uint256* target = current_target.load();
-        
-        if (!block_template || !target) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-        
-        // Start mining from a random nonce
-        CBlock block = *block_template;
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<uint32_t> dis(0, 1000000);
-        block.nNonce = dis(gen);
-        
-        // Mine until solution found or new work available
-        while (!found_flag.load() && !global_stop.load() && !new_work_available.load()) {
-            uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
-            total_hashes.fetch_add(1);
-            
-            if (UintToArith256(h) <= *target) {
-                found_flag.store(true);
-                found_nonce.store(block.nNonce);
-                break;
-            }
-            
-            block.nNonce++;
-            if (block.nNonce < block.nNonce - 1000000) { // Check for overflow
-                // Update time to avoid getting stuck
-                block.nTime = static_cast<uint32_t>(GetTime());
-            }
-        }
-    }
-}
 
 // Simple mining worker for single block
 static void SimpleMiningWorker(int core_index, const CBlock& block_template, uint32_t start_nonce, 
