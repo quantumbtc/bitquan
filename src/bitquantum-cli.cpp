@@ -172,12 +172,20 @@ static void SetThreadCpuCore(int core_index)
 #ifdef WIN32
     DWORD_PTR mask = static_cast<DWORD_PTR>(1) << core_index;
     HANDLE hThread = GetCurrentThread();
-    SetThreadAffinityMask(hThread, mask);
+    DWORD_PTR result = SetThreadAffinityMask(hThread, mask);
+    if (result == 0) {
+        tfm::format(std::cout, "Warning: Failed to set CPU affinity for core %d\n", core_index);
+        std::cout.flush();
+    }
 #else
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(static_cast<unsigned>(core_index), &cpuset);
-    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    int result = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    if (result != 0) {
+        tfm::format(std::cout, "Warning: Failed to set CPU affinity for core %d (error %d)\n", core_index, result);
+        std::cout.flush();
+    }
 #endif
 }
 
@@ -262,11 +270,71 @@ public:
     }
 };
 
-// Multi-threaded mining worker
-static void MiningWorker(int core_index, const CBlock& block_template, uint32_t start_nonce, 
-                        int max_tries, std::atomic<bool>& stop_flag, 
-                        std::atomic<uint64_t>& total_hashes, std::atomic<bool>& found_flag,
-                        std::atomic<uint32_t>& found_nonce, arith_uint256 target)
+// Persistent mining worker thread
+static void PersistentMiningWorker(int core_index, 
+                                 std::atomic<bool>& global_stop,
+                                 std::atomic<uint64_t>& total_hashes,
+                                 std::atomic<bool>& found_flag,
+                                 std::atomic<uint32_t>& found_nonce,
+                                 std::atomic<arith_uint256*>& current_target,
+                                 std::atomic<CBlock*>& current_block_template,
+                                 std::atomic<bool>& new_work_available)
+{
+    // Set CPU affinity for this worker thread
+    SetThreadCpuCore(core_index);
+    
+    tfm::format(std::cout, "Worker thread %d started on CPU core %d\n", core_index, core_index);
+    std::cout.flush();
+    
+    while (!global_stop.load()) {
+        // Wait for new work
+        while (!new_work_available.load() && !global_stop.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        
+        if (global_stop.load()) break;
+        
+        // Get current work
+        CBlock* block_template = current_block_template.load();
+        arith_uint256* target = current_target.load();
+        
+        if (!block_template || !target) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+        
+        // Start mining from a random nonce
+        CBlock block = *block_template;
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint32_t> dis(0, 1000000);
+        block.nNonce = dis(gen);
+        
+        // Mine until solution found or new work available
+        while (!found_flag.load() && !global_stop.load() && !new_work_available.load()) {
+            uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+            total_hashes.fetch_add(1);
+            
+            if (UintToArith256(h) <= *target) {
+                found_flag.store(true);
+                found_nonce.store(block.nNonce);
+                break;
+            }
+            
+            block.nNonce++;
+            if (block.nNonce < block.nNonce - 1000000) { // Check for overflow
+                // Update time to avoid getting stuck
+                block.nTime = static_cast<uint32_t>(GetTime());
+            }
+        }
+    }
+}
+
+// Simple mining worker for single block
+static void SimpleMiningWorker(int core_index, const CBlock& block_template, uint32_t start_nonce, 
+                              int max_tries, std::atomic<bool>& stop_flag, 
+                              std::atomic<uint64_t>& total_hashes, std::atomic<bool>& found_flag,
+                              std::atomic<uint32_t>& found_nonce, arith_uint256 target)
 {
     // Set CPU affinity for this worker thread
     SetThreadCpuCore(core_index);
@@ -1457,6 +1525,17 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
             }
         }
     }
+    
+    // Parse numeric arguments for nblocks and maxtries
+    for (size_t i = 1; i < args.size(); ++i) {
+        const std::string& tok = args[i];
+        // handle switches
+        if (!tok.empty() && tok[0] == '-') {
+            continue;
+        }
+        // parse integer if numeric
+        int val = 0;
+        bool ok = false;
         {
             const char* s = tok.c_str();
             char* endp = nullptr;
@@ -1482,8 +1561,11 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     
     tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
     tfm::format(std::cout, "Blocks per iteration: %d, Max tries: %d\n", nblocks_per_iteration, maxtries);
+    tfm::format(std::cout, "Debug: cpucore_count = %d\n", cpucore_count);
     if (cpucore_count > 0) {
         tfm::format(std::cout, "Binding mining thread to first %d CPU cores (0..%d)\n", cpucore_count, cpucore_count - 1);
+    } else {
+        tfm::format(std::cout, "No CPU core binding specified, using single-threaded mining\n");
     }
     // Mirror node-side startup info in CLI (thread count and target bits)
     try {
@@ -1894,13 +1976,22 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         std::vector<std::thread> workers;
                         const int num_workers = std::min(cpucore_count, static_cast<int>(std::thread::hardware_concurrency()));
                         
-                        tfm::format(std::cout, "Starting %d mining threads on CPU cores 0-%d\n", num_workers, num_workers - 1);
-                        std::cout.flush();
+                        // Only print thread info once per iteration
+                        if (bi == 0) {
+                            tfm::format(std::cout, "Starting %d mining threads on CPU cores 0-%d\n", num_workers, num_workers - 1);
+                            std::cout.flush();
+                        }
                         
                         // Start worker threads
                         for (int i = 0; i < num_workers; ++i) {
-                            workers.emplace_back(MiningWorker, i, block, start_nonce + i * (maxtries / num_workers), 
-                                               maxtries / num_workers, std::ref(stop_flag), 
+                            uint32_t worker_start_nonce = start_nonce + i * (maxtries / num_workers);
+                            int worker_max_tries = maxtries / num_workers;
+                            if (i == num_workers - 1) {
+                                // Last worker gets any remaining tries
+                                worker_max_tries = maxtries - i * (maxtries / num_workers);
+                            }
+                            workers.emplace_back(SimpleMiningWorker, i, block, worker_start_nonce, 
+                                               worker_max_tries, std::ref(stop_flag), 
                                                std::ref(local_total_hashes), std::ref(found_flag),
                                                std::ref(found_nonce_atomic), target);
                         }
