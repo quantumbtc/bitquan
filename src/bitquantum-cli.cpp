@@ -1567,7 +1567,11 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                 CScript opret = CScript() << OP_RETURN << commitment_data;
                                 
                                 // Add witness commitment to coinbase
-                                CMutableTransaction coinbase_mtx = *block.vtx[0];
+                                CMutableTransaction coinbase_mtx(block.vtx[0]->nVersion);
+                                coinbase_mtx.vin = block.vtx[0]->vin;
+                                coinbase_mtx.vout = block.vtx[0]->vout;
+                                coinbase_mtx.nLockTime = block.vtx[0]->nLockTime;
+                                
                                 coinbase_mtx.vout.emplace_back(CTxOut(0, opret));
                                 
                                 // Set witness reserved value for coinbase
