@@ -1604,18 +1604,46 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                 // Now calculate witness merkle root with proper coinbase witness
                                 uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
                                 
-                                // Debug: print witness merkle root
+                                // Debug: print detailed witness merkle root calculation
+                                tfm::format(std::cout, "Debug: Block has %d transactions\n", (int)block.vtx.size());
+                                for (size_t i = 0; i < block.vtx.size(); ++i) {
+                                    if (i == 0) {
+                                        tfm::format(std::cout, "Debug: Coinbase witness hash: 0000000000000000000000000000000000000000000000000000000000000000 (always 0)\n");
+                                    } else {
+                                        uint256 witness_hash = block.vtx[i]->GetWitnessHash().ToUint256();
+                                        tfm::format(std::cout, "Debug: TX %d witness hash: %s\n", (int)i, witness_hash.GetHex().c_str());
+                                    }
+                                }
                                 tfm::format(std::cout, "Debug: Witness merkle root: %s\n", witness_merkle_root.GetHex().c_str());
                                 std::cout.flush();
                                 
-                                // Create witness commitment
+                                // Create witness commitment according to BIP141
+                                // The commitment is: SHA256(witness_merkle_root || witness_merkle_root)
                                 uint256 commitment = Hash(witness_merkle_root, witness_merkle_root);
                                 
                                 // Debug: print witness commitment
                                 tfm::format(std::cout, "Debug: Witness commitment: %s\n", commitment.GetHex().c_str());
                                 std::cout.flush();
-                                std::vector<unsigned char> commitment_data(commitment.begin(), commitment.end());
-                                CScript opret = CScript() << OP_RETURN << commitment_data;
+                                
+                                // Create witness commitment output with proper BIP141 format
+                                // Format: OP_RETURN <36-byte commitment>
+                                // The commitment should be: 0x6a24aa21a9ed + 32-byte commitment
+                                std::vector<unsigned char> commitment_data;
+                                commitment_data.push_back(0x6a); // OP_RETURN
+                                commitment_data.push_back(0x24); // 36 bytes
+                                commitment_data.push_back(0xaa); // witness commitment marker
+                                commitment_data.push_back(0x21); // 33 bytes  
+                                commitment_data.push_back(0xa9); // witness commitment marker
+                                commitment_data.push_back(0xed); // witness commitment marker
+                                // Add the 32-byte commitment
+                                commitment_data.insert(commitment_data.end(), commitment.begin(), commitment.end());
+                                
+                                // Debug: print witness commitment data
+                                tfm::format(std::cout, "Debug: Witness commitment data length: %d\n", (int)commitment_data.size());
+                                tfm::format(std::cout, "Debug: Witness commitment hex: %s\n", HexStr(commitment_data).c_str());
+                                std::cout.flush();
+                                
+                                CScript opret(commitment_data.begin(), commitment_data.end());
                                 
                                 // Add witness commitment to coinbase
                                 CMutableTransaction final_coinbase_mtx;
