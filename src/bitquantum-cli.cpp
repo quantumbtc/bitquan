@@ -36,6 +36,7 @@
 #include <string>
 #include <tuple>
 #include <csignal>
+#include <random>
 #include <core_io.h>
 #include <streams.h>
 #include <crypto/randomq_mining.h>
@@ -1411,6 +1412,11 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                 UniValue result_array(UniValue::VARR);
                 for (int bi = 0; bi < nblocks_per_iteration; ++bi) {
                     if (g_cli_stop.load()) break;
+                    // Refresh block template every few iterations to avoid stale templates
+                    if (bi > 0 && bi % 5 == 0) {
+                        // Small delay to avoid overwhelming the node
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    }
                     // Auto-detect chain type for getblocktemplate rules
                     std::vector<std::string> gbt_args;
                     std::string rules;
@@ -1556,9 +1562,23 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                     block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
                                 }
                             }
-                            // Calculate witness commitment if needed
+                            // Check if we need witness commitment
                             const UniValue commit = gbt_res.find_value("default_witness_commitment");
-                            if (!commit.isNull() && !block.vtx.empty()) {
+                            bool has_witness_commitment = !commit.isNull() && !block.vtx.empty();
+                            
+                            // Debug: check if any transaction has witness data
+                            bool has_witness_data = false;
+                            for (const auto& tx : block.vtx) {
+                                for (const auto& vin : tx->vin) {
+                                    if (!vin.scriptWitness.IsNull()) {
+                                        has_witness_data = true;
+                                        break;
+                                    }
+                                }
+                                if (has_witness_data) break;
+                            }
+                            
+                            if (has_witness_commitment) {
                                 // Calculate witness merkle root
                                 uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
                                 // Create witness commitment
@@ -1582,6 +1602,36 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                                 }
                                 
                                 block.vtx[0] = MakeTransactionRef(std::move(coinbase_mtx));
+                            } else if (has_witness_data) {
+                                // If there's witness data but no witness commitment, remove witness data
+                                tfm::format(std::cout, "Warning: Found witness data but no witness commitment. Removing witness data.\n");
+                                std::cout.flush();
+                                
+                                // Create new block without witness data
+                                CBlock new_block;
+                                new_block.nVersion = block.nVersion;
+                                new_block.hashPrevBlock = block.hashPrevBlock;
+                                new_block.hashMerkleRoot = block.hashMerkleRoot;
+                                new_block.nTime = block.nTime;
+                                new_block.nBits = block.nBits;
+                                new_block.nNonce = block.nNonce;
+                                
+                                for (const auto& tx : block.vtx) {
+                                    CMutableTransaction mtx;
+                                    mtx.version = tx->version;
+                                    mtx.vin = tx->vin;
+                                    mtx.vout = tx->vout;
+                                    mtx.nLockTime = tx->nLockTime;
+                                    
+                                    // Clear witness data
+                                    for (auto& vin : mtx.vin) {
+                                        vin.scriptWitness.stack.clear();
+                                    }
+                                    
+                                    new_block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+                                }
+                                
+                                block = new_block;
                             }
                             block.hashMerkleRoot = BlockMerkleRoot(block);
                         }
@@ -1590,8 +1640,14 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     arith_uint256 target; bool neg=false, of=false;
                     target.SetCompact(block.nBits, &neg, &of);
                     if (neg || of || target == 0) throw std::runtime_error("invalid target from nBits");
-                    // Simple nonce loop up to maxtries
+                    // Simple nonce loop up to maxtries with randomization to avoid conflicts
                     uint32_t start_nonce = block.nNonce;
+                    // Add randomization to avoid nonce conflicts between multiple clients
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::uniform_int_distribution<uint32_t> dis(0, 1000000);
+                    start_nonce += dis(gen);
+                    block.nNonce = start_nonce;
                     bool found = false;
                     for (int t = 0; t < maxtries && !g_cli_stop.load(); ++t) {
                         // Hash
@@ -1603,8 +1659,12 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                         }
                         block.nNonce += 1;
                         if (block.nNonce < start_nonce) {
-                            // overflow, bump time
-                            block.nTime = static_cast<uint32_t>(GetTime());
+                            // overflow, bump time with small randomization to avoid conflicts
+                            uint32_t current_time = static_cast<uint32_t>(GetTime());
+                            std::random_device rd;
+                            std::mt19937 gen(rd());
+                            std::uniform_int_distribution<uint32_t> dis(0, 10);
+                            block.nTime = current_time + dis(gen);
                         }
                     }
                     if (found) {
@@ -1623,6 +1683,19 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             // Success (result may be null); append a placeholder hash entry
                             result_array.push_back(block.GetHash().GetHex());
                             ++blocks_generated;
+                        } else {
+                            // Handle submission errors (e.g., duplicate block, invalid block)
+                            std::string err_msg;
+                            if (sub_err.isStr()) err_msg = sub_err.get_str();
+                            else if (sub_err.isObject() && !sub_err["message"].isNull()) err_msg = sub_err["message"].get_str();
+                            else err_msg = sub_err.write();
+                            
+                            // Only print error if it's not a duplicate block (common with multiple clients)
+                            if (err_msg.find("duplicate") == std::string::npos && 
+                                err_msg.find("already") == std::string::npos) {
+                                tfm::format(std::cout, "Warning: Block submission failed: %s\n", err_msg.c_str());
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
