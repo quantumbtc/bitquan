@@ -121,7 +121,7 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-color=<when>", strprintf("Color setting for CLI output (default: %s). Valid values: always, auto (add color codes when standard output is connected to a terminal and OS is not WIN32), never. Only applies to the output of -getinfo.", DEFAULT_COLOR_SETTING), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-named", strprintf("Pass named instead of positional arguments (default: %s)", DEFAULT_NAMED), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-clientmine", strprintf("Mine on the CLI client using getblocktemplate/submitblock (default: %s)", DEFAULT_CLIENT_MINE), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-cpucore=<n>", "Bind the client-side mining loop to CPU core index <n> (0-based). Applies only when -clientmine is set.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-cpucore=<n>", "Bind the client-side mining loop to the first <n> CPU cores (0..n-1). Applies only when -clientmine is set.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcclienttimeout=<n>", strprintf("Timeout in seconds during HTTP requests, or 0 for no timeout. (default: %d)", DEFAULT_HTTP_CLIENT_TIMEOUT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcconnect=<ip>", strprintf("Send commands to node running on <ip> (default: %s)", DEFAULT_RPCCONNECT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpccookiefile=<loc>", "Location of the auth cookie. Relative paths will be prefixed by a net-specific datadir location. (default: data dir)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -163,23 +163,21 @@ struct CConnectionFailed : std::runtime_error {
 };
 
 // Set current thread CPU affinity to a specific core (best-effort)
-static void SetCurrentThreadCpuCoreOptional(int core_index)
+static void SetCurrentThreadCpuCoresOptional(int cores_count)
 {
-    if (core_index < 0) return;
+    if (cores_count <= 0) return;
 #ifdef WIN32
     DWORD_PTR mask = 0;
-    if (core_index < static_cast<int>(sizeof(DWORD_PTR) * 8)) {
-        mask = (static_cast<DWORD_PTR>(1) << core_index);
-        HANDLE hThread = GetCurrentThread();
-        SetThreadAffinityMask(hThread, mask);
-    }
+    const int max_bits = static_cast<int>(sizeof(DWORD_PTR) * 8);
+    const int use = std::min(cores_count, max_bits);
+    for (int i = 0; i < use; ++i) mask |= (static_cast<DWORD_PTR>(1) << i);
+    HANDLE hThread = GetCurrentThread();
+    SetThreadAffinityMask(hThread, mask);
 #else
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    if (core_index >= 0) {
-        CPU_SET(static_cast<unsigned>(core_index), &cpuset);
-        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-    }
+    for (int i = 0; i < cores_count; ++i) CPU_SET(static_cast<unsigned>(i), &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
 }
 
@@ -1306,7 +1304,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     // args layout may include flags (e.g. -clientmine). Extract numeric args safely.
     int nblocks_per_iteration = 1;
     int maxtries = 1000000;
-    int cpucore_index = -1; // optional CPU affinity
+    int cpucore_count = -1; // optional CPU affinity: bind to first N cores
     int found_numeric = 0;
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& tok = args[i];
@@ -1318,7 +1316,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     char* endp = nullptr;
                     long v = std::strtol(val.c_str(), &endp, 10);
                     if (endp && *endp == '\0' && v >= 0 && v <= 1024) {
-                        cpucore_index = static_cast<int>(v);
+                        cpucore_count = static_cast<int>(v);
                     }
                 }
             }
@@ -1352,8 +1350,8 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     
     tfm::format(std::cout, "Starting continuous mining to address: %s\n", address);
     tfm::format(std::cout, "Blocks per iteration: %d, Max tries: %d\n", nblocks_per_iteration, maxtries);
-    if (cpucore_index >= 0) {
-        tfm::format(std::cout, "Binding mining thread to CPU core: %d\n", cpucore_index);
+    if (cpucore_count > 0) {
+        tfm::format(std::cout, "Binding mining thread to first %d CPU cores (0..%d)\n", cpucore_count, cpucore_count - 1);
     }
     // Mirror node-side startup info in CLI (thread count and target bits)
     try {
@@ -1406,7 +1404,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     
                     tfm::format(std::cout,
                         "[Mining HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu hashes\n",
-                        current, average, (unsigned long long)total);
+                        current, average, (unsigned long long)window_hashes);
                     std::cout.flush();
                     
                     // Update window tracking
@@ -1439,8 +1437,8 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
         try {
             if (g_cli_stop.load()) break;
             // Apply CPU affinity at the start of each iteration (mining happens on this thread)
-            if (cpucore_index >= 0) {
-                SetCurrentThreadCpuCoreOptional(cpucore_index);
+            if (cpucore_count > 0) {
+                SetCurrentThreadCpuCoresOptional(cpucore_count);
             }
             // Prepare arguments for this iteration
             std::vector<std::string> loop_args;
