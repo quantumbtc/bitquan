@@ -1446,14 +1446,41 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     int maxtries = 1000000;
     int cpucore_count = -1; // optional CPU affinity: bind to first N cores
     
-    // Prefer global arg manager for CPU core binding setting
+    // Try both global arg manager and direct args parsing for CPU core binding
     {
+        // First try global arg manager
         const std::string cc = gArgs.GetArg("-cpucore", "");
+        tfm::format(std::cout, "Debug: gArgs.GetArg(\"-cpucore\", \"\") returned: '%s'\n", cc.c_str());
+        std::cout.flush();
+        
         if (!cc.empty()) {
             char* endp = nullptr;
             long v = std::strtol(cc.c_str(), &endp, 10);
+            tfm::format(std::cout, "Debug: parsed value = %ld, endp = %p, *endp = '%c'\n", v, (void*)endp, endp ? *endp : '\\0');
+            std::cout.flush();
             if (endp && *endp == '\0' && v > 0 && v <= 1024) {
                 cpucore_count = static_cast<int>(v);
+                tfm::format(std::cout, "Debug: cpucore_count set to %d from gArgs\n", cpucore_count);
+                std::cout.flush();
+            }
+        } else {
+            // Fallback: parse directly from args vector
+            tfm::format(std::cout, "Debug: gArgs failed, trying direct args parsing\n");
+            std::cout.flush();
+            for (const auto& arg : args) {
+                if (arg.find("-cpucore=") == 0) {
+                    const std::string value = arg.substr(9); // Skip "-cpucore="
+                    tfm::format(std::cout, "Debug: found -cpucore= in args: '%s'\n", value.c_str());
+                    std::cout.flush();
+                    char* endp = nullptr;
+                    long v = std::strtol(value.c_str(), &endp, 10);
+                    if (endp && *endp == '\0' && v > 0 && v <= 1024) {
+                        cpucore_count = static_cast<int>(v);
+                        tfm::format(std::cout, "Debug: cpucore_count set to %d from direct parsing\n", cpucore_count);
+                        std::cout.flush();
+                        break;
+                    }
+                }
             }
         }
     }
