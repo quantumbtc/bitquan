@@ -1566,6 +1566,12 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             const UniValue commit = gbt_res.find_value("default_witness_commitment");
                             bool has_witness_commitment = !commit.isNull() && !block.vtx.empty();
                             
+                            // Debug: print witness commitment info
+                            if (has_witness_commitment) {
+                                tfm::format(std::cout, "Debug: Found witness commitment, block has %d transactions\n", (int)block.vtx.size());
+                                std::cout.flush();
+                            }
+                            
                             // Debug: check if any transaction has witness data
                             bool has_witness_data = false;
                             for (const auto& tx : block.vtx) {
@@ -1579,29 +1585,54 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                             }
                             
                             if (has_witness_commitment) {
-                                // Calculate witness merkle root
-                                uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
-                                // Create witness commitment
-                                uint256 commitment = Hash(witness_merkle_root, witness_merkle_root);
-                                std::vector<unsigned char> commitment_data(commitment.begin(), commitment.end());
-                                CScript opret = CScript() << OP_RETURN << commitment_data;
-                                
-                                // Add witness commitment to coinbase
+                                // First, set witness reserved value for coinbase
                                 CMutableTransaction coinbase_mtx;
                                 coinbase_mtx.version = block.vtx[0]->version;
                                 coinbase_mtx.vin = block.vtx[0]->vin;
                                 coinbase_mtx.vout = block.vtx[0]->vout;
                                 coinbase_mtx.nLockTime = block.vtx[0]->nLockTime;
                                 
-                                coinbase_mtx.vout.emplace_back(CTxOut(0, opret));
-                                
-                                // Set witness reserved value for coinbase
+                                // Set witness reserved value for coinbase BEFORE calculating witness merkle root
                                 if (!coinbase_mtx.vin.empty()) {
                                     coinbase_mtx.vin[0].scriptWitness.stack.resize(1);
                                     coinbase_mtx.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
                                 }
                                 
+                                // Update block with coinbase that has witness data
                                 block.vtx[0] = MakeTransactionRef(std::move(coinbase_mtx));
+                                
+                                // Now calculate witness merkle root with proper coinbase witness
+                                uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
+                                
+                                // Debug: print witness merkle root
+                                tfm::format(std::cout, "Debug: Witness merkle root: %s\n", witness_merkle_root.GetHex().c_str());
+                                std::cout.flush();
+                                
+                                // Create witness commitment
+                                uint256 commitment = Hash(witness_merkle_root, witness_merkle_root);
+                                
+                                // Debug: print witness commitment
+                                tfm::format(std::cout, "Debug: Witness commitment: %s\n", commitment.GetHex().c_str());
+                                std::cout.flush();
+                                std::vector<unsigned char> commitment_data(commitment.begin(), commitment.end());
+                                CScript opret = CScript() << OP_RETURN << commitment_data;
+                                
+                                // Add witness commitment to coinbase
+                                CMutableTransaction final_coinbase_mtx;
+                                final_coinbase_mtx.version = block.vtx[0]->version;
+                                final_coinbase_mtx.vin = block.vtx[0]->vin;
+                                final_coinbase_mtx.vout = block.vtx[0]->vout;
+                                final_coinbase_mtx.nLockTime = block.vtx[0]->nLockTime;
+                                
+                                final_coinbase_mtx.vout.emplace_back(CTxOut(0, opret));
+                                
+                                // Keep witness data from previous step
+                                if (!final_coinbase_mtx.vin.empty()) {
+                                    final_coinbase_mtx.vin[0].scriptWitness.stack.resize(1);
+                                    final_coinbase_mtx.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
+                                }
+                                
+                                block.vtx[0] = MakeTransactionRef(std::move(final_coinbase_mtx));
                             } else if (has_witness_data) {
                                 // If there's witness data but no witness commitment, remove witness data
                                 tfm::format(std::cout, "Warning: Found witness data but no witness commitment. Removing witness data.\n");
