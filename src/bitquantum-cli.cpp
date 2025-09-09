@@ -37,11 +37,14 @@
 #include <tuple>
 #include <csignal>
 #include <random>
+#include <fstream>
 #ifdef WIN32
 #include <windows.h>
 #else
 #include <pthread.h>
 #include <sched.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 #include <core_io.h>
 #include <streams.h>
@@ -163,22 +166,135 @@ struct CConnectionFailed : std::runtime_error {
 };
 
 // Set current thread CPU affinity to a specific core (best-effort)
-static void SetCurrentThreadCpuCoresOptional(int cores_count)
+static void SetThreadCpuCore(int core_index)
 {
-    if (cores_count <= 0) return;
+    if (core_index < 0) return;
 #ifdef WIN32
-    DWORD_PTR mask = 0;
-    const int max_bits = static_cast<int>(sizeof(DWORD_PTR) * 8);
-    const int use = std::min(cores_count, max_bits);
-    for (int i = 0; i < use; ++i) mask |= (static_cast<DWORD_PTR>(1) << i);
+    DWORD_PTR mask = static_cast<DWORD_PTR>(1) << core_index;
     HANDLE hThread = GetCurrentThread();
     SetThreadAffinityMask(hThread, mask);
 #else
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    for (int i = 0; i < cores_count; ++i) CPU_SET(static_cast<unsigned>(i), &cpuset);
+    CPU_SET(static_cast<unsigned>(core_index), &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #endif
+}
+
+// Single-instance mining lock
+class MiningLock {
+private:
+    std::string lock_file_path;
+#ifdef WIN32
+    HANDLE lock_handle = INVALID_HANDLE_VALUE;
+#else
+    int lock_fd = -1;
+#endif
+    bool is_locked = false;
+
+public:
+    MiningLock() {
+        // Use temp directory for lock file
+        const char* temp_dir = std::getenv("TEMP");
+        if (!temp_dir) temp_dir = std::getenv("TMP");
+        if (!temp_dir) temp_dir = "/tmp";
+        lock_file_path = std::string(temp_dir) + "/bitquantum-cli-mining.lock";
+    }
+
+    ~MiningLock() {
+        release();
+    }
+
+    bool acquire() {
+        if (is_locked) return true;
+
+#ifdef WIN32
+        lock_handle = CreateFileA(lock_file_path.c_str(), 
+                                 GENERIC_WRITE, 
+                                 0, 
+                                 NULL, 
+                                 CREATE_NEW, 
+                                 FILE_ATTRIBUTE_NORMAL, 
+                                 NULL);
+        if (lock_handle == INVALID_HANDLE_VALUE) {
+            DWORD error = GetLastError();
+            if (error == ERROR_FILE_EXISTS) {
+                return false; // Another instance is running
+            }
+            return false; // Other error
+        }
+        is_locked = true;
+        return true;
+#else
+        lock_fd = open(lock_file_path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+        if (lock_fd == -1) {
+            if (errno == EEXIST) {
+                return false; // Another instance is running
+            }
+            return false; // Other error
+        }
+        is_locked = true;
+        return true;
+#endif
+    }
+
+    void release() {
+        if (!is_locked) return;
+
+#ifdef WIN32
+        if (lock_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(lock_handle);
+            lock_handle = INVALID_HANDLE_VALUE;
+        }
+#else
+        if (lock_fd != -1) {
+            close(lock_fd);
+            lock_fd = -1;
+        }
+#endif
+        // Remove lock file
+        std::remove(lock_file_path.c_str());
+        is_locked = false;
+    }
+
+    bool isLocked() const {
+        return is_locked;
+    }
+};
+
+// Multi-threaded mining worker
+static void MiningWorker(int core_index, const CBlock& block_template, uint32_t start_nonce, 
+                        int max_tries, std::atomic<bool>& stop_flag, 
+                        std::atomic<uint64_t>& total_hashes, std::atomic<bool>& found_flag,
+                        std::atomic<uint32_t>& found_nonce, arith_uint256 target)
+{
+    // Set CPU affinity for this worker thread
+    SetThreadCpuCore(core_index);
+    
+    CBlock block = block_template; // Copy the template
+    block.nNonce = start_nonce;
+    
+    for (int t = 0; t < max_tries && !stop_flag.load(); ++t) {
+        uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+        total_hashes.fetch_add(1);
+        
+        if (UintToArith256(h) <= target) {
+            found_flag.store(true);
+            found_nonce.store(block.nNonce);
+            stop_flag.store(true); // Signal all workers to stop
+            break;
+        }
+        
+        block.nNonce++;
+        if (block.nNonce < start_nonce) {
+            // overflow, bump time
+            uint32_t current_time = static_cast<uint32_t>(GetTime());
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<uint32_t> dis(0, 10);
+            block.nTime = current_time + dis(gen);
+        }
+    }
 }
 
 //
@@ -1294,11 +1410,26 @@ static void SetGenerateToAddressArgs(const std::string& address, std::vector<std
 
 static void StartLoopMining(const std::string& address, const std::vector<std::string>& args)
 {
-    // Install Ctrl+C handler to stop loop cleanly
+    // Check for single-instance mining lock
+    static MiningLock mining_lock;
+    if (!mining_lock.acquire()) {
+        tfm::format(std::cerr, "Error: Another bitquantum-cli mining instance is already running on this machine.\n");
+        tfm::format(std::cerr, "Only one CLI mining instance is allowed per machine to prevent conflicts.\n");
+        tfm::format(std::cerr, "Please stop the existing instance or wait for it to complete.\n");
+        return;
+    }
+    
+    // Install Ctrl+C handler to stop loop cleanly and release lock
     static std::atomic<bool> g_cli_stop{false};
-    std::signal(SIGINT, [](int){ g_cli_stop.store(true); });
+    std::signal(SIGINT, [](int){ 
+        g_cli_stop.store(true); 
+        mining_lock.release();
+    });
 #ifdef SIGTERM
-    std::signal(SIGTERM, [](int){ g_cli_stop.store(true); });
+    std::signal(SIGTERM, [](int){ 
+        g_cli_stop.store(true); 
+        mining_lock.release();
+    });
 #endif
     // Parse arguments for loop mining
     // args layout may include flags (e.g. -clientmine). Extract numeric args safely.
@@ -1310,21 +1441,22 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
         const std::string& tok = args[i];
         // handle switches
         if (!tok.empty() && tok[0] == '-') {
-            if (tok.rfind("-cpucore=", 0) == 0) {
-                const std::string val = tok.substr(std::string("-cpucore=").size());
-                if (!val.empty()) {
-                    char* endp = nullptr;
-                    long v = std::strtol(val.c_str(), &endp, 10);
-                    if (endp && *endp == '\0' && v >= 0 && v <= 1024) {
-                        cpucore_count = static_cast<int>(v);
-                    }
-                }
-            }
-            continue;
+            continue; // other switches are handled by gArgs
         }
         // parse integer if numeric
         int val = 0;
         bool ok = false;
+    // Prefer global arg manager for CPU core binding setting
+    {
+        const std::string cc = gArgs.GetArg("-cpucore", "");
+        if (!cc.empty()) {
+            char* endp = nullptr;
+            long v = std::strtol(cc.c_str(), &endp, 10);
+            if (endp && *endp == '\0' && v > 0 && v <= 1024) {
+                cpucore_count = static_cast<int>(v);
+            }
+        }
+    }
         {
             const char* s = tok.c_str();
             char* endp = nullptr;
@@ -1436,10 +1568,6 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     while (true) {
         try {
             if (g_cli_stop.load()) break;
-            // Apply CPU affinity at the start of each iteration (mining happens on this thread)
-            if (cpucore_count > 0) {
-                SetCurrentThreadCpuCoresOptional(cpucore_count);
-            }
             // Prepare arguments for this iteration
             std::vector<std::string> loop_args;
             loop_args.push_back(std::to_string(nblocks_per_iteration));
@@ -1745,7 +1873,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     arith_uint256 target; bool neg=false, of=false;
                     target.SetCompact(block.nBits, &neg, &of);
                     if (neg || of || target == 0) throw std::runtime_error("invalid target from nBits");
-                    // Simple nonce loop up to maxtries with randomization to avoid conflicts
+                    // Multi-threaded mining with CPU core binding
                     uint32_t start_nonce = block.nNonce;
                     // Add randomization to avoid nonce conflicts between multiple clients
                     std::random_device rd;
@@ -1753,23 +1881,58 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
                     std::uniform_int_distribution<uint32_t> dis(0, 1000000);
                     start_nonce += dis(gen);
                     block.nNonce = start_nonce;
+                    
                     bool found = false;
-                    for (int t = 0; t < maxtries && !g_cli_stop.load(); ++t) {
-                        // Hash
-                        uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
-                        local_total_hashes.fetch_add(1);
-                        if (UintToArith256(h) <= target) {
-                            found = true;
-                            break;
+                    uint32_t found_nonce = 0;
+                    
+                    if (cpucore_count > 0) {
+                        // Multi-threaded mining with CPU core binding
+                        std::atomic<bool> stop_flag{false};
+                        std::atomic<bool> found_flag{false};
+                        std::atomic<uint32_t> found_nonce_atomic{0};
+                        
+                        std::vector<std::thread> workers;
+                        const int num_workers = std::min(cpucore_count, static_cast<int>(std::thread::hardware_concurrency()));
+                        
+                        tfm::format(std::cout, "Starting %d mining threads on CPU cores 0-%d\n", num_workers, num_workers - 1);
+                        std::cout.flush();
+                        
+                        // Start worker threads
+                        for (int i = 0; i < num_workers; ++i) {
+                            workers.emplace_back(MiningWorker, i, block, start_nonce + i * (maxtries / num_workers), 
+                                               maxtries / num_workers, std::ref(stop_flag), 
+                                               std::ref(local_total_hashes), std::ref(found_flag),
+                                               std::ref(found_nonce_atomic), target);
                         }
-                        block.nNonce += 1;
-                        if (block.nNonce < start_nonce) {
-                            // overflow, bump time with small randomization to avoid conflicts
-                            uint32_t current_time = static_cast<uint32_t>(GetTime());
-                            std::random_device rd;
-                            std::mt19937 gen(rd());
-                            std::uniform_int_distribution<uint32_t> dis(0, 10);
-                            block.nTime = current_time + dis(gen);
+                        
+                        // Wait for workers to complete or find a solution
+                        for (auto& worker : workers) {
+                            worker.join();
+                        }
+                        
+                        found = found_flag.load();
+                        found_nonce = found_nonce_atomic.load();
+                        if (found) {
+                            block.nNonce = found_nonce;
+                        }
+                    } else {
+                        // Single-threaded mining (original logic)
+                        for (int t = 0; t < maxtries && !g_cli_stop.load(); ++t) {
+                            uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+                            local_total_hashes.fetch_add(1);
+                            if (UintToArith256(h) <= target) {
+                                found = true;
+                                break;
+                            }
+                            block.nNonce += 1;
+                            if (block.nNonce < start_nonce) {
+                                // overflow, bump time with small randomization to avoid conflicts
+                                uint32_t current_time = static_cast<uint32_t>(GetTime());
+                                std::random_device rd;
+                                std::mt19937 gen(rd());
+                                std::uniform_int_distribution<uint32_t> dis(0, 10);
+                                block.nTime = current_time + dis(gen);
+                            }
                         }
                     }
                     if (found) {
@@ -1899,6 +2062,10 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
     // Not reached in normal loop; ensure reporter is stopped if we ever exit
     stop_report.store(true);
     if (cli_reporter.joinable()) cli_reporter.join();
+    
+    // Release mining lock
+    mining_lock.release();
+    
     tfm::format(std::cout, "Stopped mining (Ctrl+C).\n");
 }
 
