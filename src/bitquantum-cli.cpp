@@ -1456,7 +1456,7 @@ static void StartLoopMining(const std::string& address, const std::vector<std::s
         if (!cc.empty()) {
             char* endp = nullptr;
             long v = std::strtol(cc.c_str(), &endp, 10);
-            tfm::format(std::cout, "Debug: parsed value = %ld, endp = %p, *endp = '%c'\n", v, (void*)endp, endp ? *endp : '\\0');
+            tfm::format(std::cout, "Debug: parsed value = %ld, endp = %p, *endp = '%c'\n", v, (void*)endp, endp ? *endp : '\0');
             std::cout.flush();
             if (endp && *endp == '\0' && v > 0 && v <= 1024) {
                 cpucore_count = static_cast<int>(v);
