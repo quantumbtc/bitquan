@@ -53,7 +53,6 @@ std::unique_ptr<CBaseChainParams> CreateBaseChainParams(const ChainType chain)
     case ChainType::SIGNET:
     case ChainType::REGTEST:
         // Redirect all non-mainnet to mainnet
-        LogInfo("Non-mainnet chain type requested, redirecting to mainnet");
         return std::make_unique<CBaseChainParams>("", 8332);
     }
     assert(false);
