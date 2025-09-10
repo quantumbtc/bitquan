@@ -71,7 +71,7 @@ class SimulateTxTest(BitquantumTestFramework):
         tx1changepos = funding["changepos"]
         bitquantum_fee = Decimal(funding["fee"])
 
-        # w0 sees fee + 5 btc decrease, w2 sees + 5 btc
+        # w0 sees fee + 5 btq decrease, w2 sees + 5 btq
         assert_approx(w0.simulaterawtransaction([tx1])["balance_change"], -(Decimal("5") + bitquantum_fee))
         assert_approx(w2.simulaterawtransaction([tx1])["balance_change"], Decimal("5"))
 

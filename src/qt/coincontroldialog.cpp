@@ -492,7 +492,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     }
 
     // actually update labels
-    BitquantumUnit nDisplayUnit = BitquantumUnit::BTC;
+    BitquantumUnit nDisplayUnit = BitquantumUnit::BTQ;
     if (model && model->getOptionsModel())
         nDisplayUnit = model->getOptionsModel()->getDisplayUnit();
 

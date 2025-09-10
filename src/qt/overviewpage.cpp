@@ -116,7 +116,7 @@ public:
         return {DECORATION_SIZE + 8 + minimum_text_width, DECORATION_SIZE};
     }
 
-    BitquantumUnit unit{BitquantumUnit::BTC};
+    BitquantumUnit unit{BitquantumUnit::BTQ};
 
 Q_SIGNALS:
     //! An intermediate signal for emitting from the `paint() const` member function.
@@ -239,7 +239,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
         connect(model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &OverviewPage::updateDisplayUnit);
     }
 
-    // update the display unit, to not use the default ("BTC")
+    // update the display unit, to not use the default ("BTQ")
     updateDisplayUnit();
 }
 

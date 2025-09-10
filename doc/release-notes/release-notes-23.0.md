@@ -47,7 +47,7 @@ P2P and network changes
   They will become eligible for address gossip after sending an ADDR, ADDRV2,
   or GETADDR message. (#21528)
 
-- Before this release, Bitquantum Core had a strong preference to try to connect only to peers that listen on port 8333. As a result of that, Bitquantum nodes listening on non-standard ports would likely not get any Bitquantum Core peers connecting to them. This preference has been removed. (#23542)
+- Before this release, Bitquantum Core had a strong preference to try to connect only to peers that listen on port 51997. As a result of that, Bitquantum nodes listening on non-standard ports would likely not get any Bitquantum Core peers connecting to them. This preference has been removed. (#23542)
 
 - Full support has been added for the CJDNS network. See the new option `-cjdnsreachable` and [doc/cjdns.md](https://github.com/bitquantum/bitquantum/tree/23.x/doc/cjdns.md) (#23077)
 
@@ -107,7 +107,7 @@ Updated RPCs
   `-deprecated=fees` if needed in this version). The same fee fields can be accessed
   through the `fees` object in the result. WARNING: deprecated
   fields `ancestorfees` and `descendantfees` are denominated in sats, whereas all
-  fields in the `fees` object are denominated in BTC. (#22689)
+  fields in the `fees` object are denominated in BTQ. (#22689)
 
 - Both `createmultisig` and `addmultisigaddress` now include a `warnings`
   field, which will show a warning if a non-legacy address type is requested

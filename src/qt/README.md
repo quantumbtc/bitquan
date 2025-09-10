@@ -61,7 +61,7 @@ To run:
 
 * UI elements like BitquantumAmountField, which inherit from QWidget.
 * `bitquantumstrings.cpp`: automatically generated
-* `bitquantumunits.(h/cpp)`: BTC / mBTC / etc. handling
+* `bitquantumunits.(h/cpp)`: BTQ / mBTQ / etc. handling
 * `callback.h`
 * `guiconstants.h`: UI colors, app name, etc.
 * `guiutil.h`: several helper functions
