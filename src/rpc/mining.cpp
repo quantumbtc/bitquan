@@ -198,14 +198,8 @@ static bool getScriptFromAddress(const std::string& address, CScript& script, st
     return true;
 }
 
-// Continuous mining functionality removed
-static void ContinuousMiningWorker(ChainstateManager&, Mining&, const CScript&) {}
-
 // Start continuous mining
 static bool StartContinuousMining(ChainstateManager&, Mining&, const std::string&) { return false; }
-
-// Stop continuous mining
-static bool StopContinuousMining() { return false; }
 
 // Get mining status
 static UniValue GetMiningStatus() { UniValue obj(UniValue::VOBJ); return obj; }
