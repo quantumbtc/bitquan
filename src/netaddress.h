@@ -183,7 +183,7 @@ public:
     /**
      * Whether this object is a privacy network.
      * TODO: consider adding IsCJDNS() here when more peers adopt CJDNS, see:
-     * https://github.com/bitquantum/bitquantum/pull/27411#issuecomment-1497176155
+     * https://github.com/bitquantumcore/bitquantum /pull/27411#issuecomment-1497176155
      */
     [[nodiscard]] bool IsPrivacyNet() const { return IsTor() || IsI2P(); }
 

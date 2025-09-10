@@ -4,7 +4,7 @@ Bitquantum version 0.7.2 is now available from:
 This is a bug-fix minor release.
 
 Please report bugs using the issue tracker at github:
-  https://github.com/bitquantum/bitquantum/issues
+  https://github.com/bitquantumcore/bitquantum /issues
 
 How to Upgrade
 --------------

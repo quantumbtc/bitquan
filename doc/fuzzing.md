@@ -5,11 +5,11 @@
 To quickly get started fuzzing Bitquantum Core using [libFuzzer](https://llvm.org/docs/LibFuzzer.html):
 
 ```sh
-$ git clone https://github.com/bitquantum/bitquantum
+$ git clone https://github.com/bitquantumcore/bitquantum 
 $ cd bitquantum/
 $ cmake --preset=libfuzzer
 # macOS users: If you have problem with this step then make sure to read "macOS hints for
-# libFuzzer" on https://github.com/bitquantum/bitquantum/blob/master/doc/fuzzing.md#macos-hints-for-libfuzzer
+# libFuzzer" on https://github.com/bitquantumcore/bitquantum /blob/master/doc/fuzzing.md#macos-hints-for-libfuzzer
 $ cmake --build build_fuzz
 $ FUZZ=process_message build_fuzz/bin/fuzz
 # abort fuzzing using ctrl-c
@@ -212,7 +212,7 @@ Read the [libFuzzer documentation](https://llvm.org/docs/LibFuzzer.html) for mor
 To quickly get started fuzzing Bitquantum Core using [afl++](https://github.com/AFLplusplus/AFLplusplus):
 
 ```sh
-$ git clone https://github.com/bitquantum/bitquantum
+$ git clone https://github.com/bitquantumcore/bitquantum 
 $ cd bitquantum/
 $ git clone https://github.com/AFLplusplus/AFLplusplus
 $ make -C AFLplusplus/ source-only
@@ -243,7 +243,7 @@ Read the [afl++ documentation](https://github.com/AFLplusplus/AFLplusplus) for m
 To quickly get started fuzzing Bitquantum Core using [Honggfuzz](https://github.com/google/honggfuzz):
 
 ```sh
-$ git clone https://github.com/bitquantum/bitquantum
+$ git clone https://github.com/bitquantumcore/bitquantum 
 $ cd bitquantum/
 $ git clone https://github.com/google/honggfuzz
 $ cd honggfuzz/

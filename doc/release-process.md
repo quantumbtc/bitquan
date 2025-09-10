@@ -79,7 +79,7 @@ Release Process
 - Merge the release notes from [the wiki](https://github.com/bitquantum-core/bitquantum-devwiki/wiki/) into the branch.
 - Ensure the "Needs release note" label is removed from all relevant pull
   requests and issues:
-  https://github.com/bitquantum/bitquantum/issues?q=label%3A%22Needs+release+note%22
+  https://github.com/bitquantumcore/bitquantum /issues?q=label%3A%22Needs+release+note%22
 
 #### Tagging a release (candidate)
 
@@ -101,7 +101,7 @@ Check out the source code in the following directory hierarchy.
     cd /path/to/your/toplevel/build
     git clone https://github.com/bitquantum-core/guix.sigs.git
     git clone https://github.com/bitquantum-core/bitquantum-detached-sigs.git
-    git clone https://github.com/bitquantum/bitquantum.git
+    git clone https://github.com/bitquantumcore/bitquantum .git
 
 ### Write the release notes
 

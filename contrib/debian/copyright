@@ -2,7 +2,7 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Bitquantum
 Upstream-Contact: Satoshi Nakamoto <satoshin@gmx.com>
  irc://#bitquantum-core-dev@libera.chat
-Source: https://github.com/bitquantum/bitquantum
+Source: https://github.com/bitquantumcore/bitquantum 
 
 Files: *
 Copyright: 2009-2025, Bitquantum Core Developers

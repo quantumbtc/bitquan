@@ -52,7 +52,7 @@ characters (https://github.com/bitquantum/bitquantum/issues/6078).
 For other platforms there are no notable changes.
 
 For the notable changes in 0.10, refer to the release notes
-at https://github.com/bitquantum/bitquantum/blob/v0.10.0/doc/release-notes.md
+at https://github.com/bitquantumcore/bitquantum /blob/v0.10.0/doc/release-notes.md
 
 0.10.2 Change log
 =================

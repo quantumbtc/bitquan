@@ -4,12 +4,12 @@ Bitquantum version 0.7.1 is now available from:
 This is a bug-fix minor release.
 
 Please report bugs using the issue tracker at github:
-  https://github.com/bitquantum/bitquantum/issues
+  https://github.com/bitquantumcore/bitquantum /issues
 
 Project source code is hosted at github; you can get
 source-only tarballs/zipballs directly from there:
-  https://github.com/bitquantum/bitquantum/tarball/v0.7.1  # .tar.gz
-  https://github.com/bitquantum/bitquantum/zipball/v0.7.1  # .zip
+  https://github.com/bitquantumcore/bitquantum /tarball/v0.7.1  # .tar.gz
+  https://github.com/bitquantumcore/bitquantum /zipball/v0.7.1  # .zip
 
 Ubuntu Linux users can use the "Personal Package Archive" (PPA)
 maintained by Matt Corallo to automatically keep 

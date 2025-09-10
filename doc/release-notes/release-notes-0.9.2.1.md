@@ -8,7 +8,7 @@ Upgrading to this release is recommended.
 
 Please report bugs using the issue tracker at github:
 
-  https://github.com/bitquantum/bitquantum/issues
+  https://github.com/bitquantumcore/bitquantum /issues
 
 How to Upgrade
 --------------

@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Bitquantum Core Security Policy
-    url: https://github.com/bitquantum/bitquantum/blob/master/SECURITY.md
+    url: https://github.com/bitquantumcore/bitquantum /blob/master/SECURITY.md
     about: View security policy
   - name: Bitquantum Core Developers
     url: https://bitquantumcore.org

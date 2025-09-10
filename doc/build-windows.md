@@ -38,7 +38,7 @@ If you want to build the Windows installer using the `deploy` build target, you 
 
 Acquire the source in the usual way:
 
-    git clone https://github.com/bitquantum/bitquantum.git
+    git clone https://github.com/bitquantumcore/bitquantum .git
     cd bitquantum
 
 Note that for WSL the Bitquantum Core source path MUST be somewhere in the default mount file system, for

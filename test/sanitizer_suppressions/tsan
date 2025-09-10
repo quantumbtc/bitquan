@@ -5,7 +5,7 @@
 
 # deadlock (TODO fix)
 # To reproduce, see:
-# https://github.com/bitquantum/bitquantum/issues/19303#issuecomment-1514926359
+# https://github.com/bitquantumcore/bitquantum /issues/19303#issuecomment-1514926359
 deadlock:Chainstate::ConnectTip
 
 # Intentional deadlock in tests
@@ -29,11 +29,11 @@ race:zmq::*
 # Suppressions that follow might only happen intermittently, thus they are not
 # reproducible. Make sure to include a link to a full trace.
 
-# https://github.com/bitquantum/bitquantum/issues/20618
+# https://github.com/bitquantumcore/bitquantum /issues/20618
 race:CZMQAbstractPublishNotifier::SendZmqMessage
 
-# https://github.com/bitquantum/bitquantum/pull/27498#issuecomment-1517410478
+# https://github.com/bitquantumcore/bitquantum /pull/27498#issuecomment-1517410478
 race:epoll_ctl
 
-# https://github.com/bitquantum/bitquantum/issues/23366
+# https://github.com/bitquantumcore/bitquantum /issues/23366
 race:std::__1::ios_base::*

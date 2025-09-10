@@ -7,7 +7,7 @@ include_guard(GLOBAL)
 # Illumos/SmartOS requires linking with -lsocket if
 # using getifaddrs & freeifaddrs.
 # See:
-# - https://github.com/bitquantum/bitquantum/pull/21486
+# - https://github.com/bitquantumcore/bitquantum /pull/21486
 # - https://smartos.org/man/3socket/getifaddrs
 function(test_append_socket_library target)
   if (NOT TARGET ${target})

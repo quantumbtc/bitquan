@@ -208,7 +208,7 @@ Binary verification
   In this release and moving forward it will verify that the binaries are
   signed by a _threshold of trusted keys_. For more details and
   examples, see:
-  https://github.com/bitquantum/bitquantum/blob/master/contrib/verify-binaries/README.md
+  https://github.com/bitquantumcore/bitquantum /blob/master/contrib/verify-binaries/README.md
   (#27358)
 
 Low-level changes

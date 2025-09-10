@@ -71,7 +71,7 @@ Now that all the required dependencies are installed, let's clone the Bitquantum
 All build scripts and commands will run from this directory.
 
 ``` bash
-git clone https://github.com/bitquantum/bitquantum.git
+git clone https://github.com/bitquantumcore/bitquantum .git
 ```
 
 ### 5. Install Optional Dependencies

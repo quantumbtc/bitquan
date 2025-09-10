@@ -23,7 +23,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "kernel/coinstats -> validation -> kernel/coinstats",
     "versionbits -> versionbits_impl -> versionbits",
 
-    # Temporary, removed in followup https://github.com/bitquantum/bitquantum/pull/24230
+    # Temporary, removed in followup https://github.com/bitquantumcore/bitquantum /pull/24230
     "index/base -> node/context -> net_processing -> index/blockfilterindex -> index/base",
 )
 
