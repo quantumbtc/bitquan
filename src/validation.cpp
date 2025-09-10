@@ -2009,6 +2009,15 @@ bool ChainstateManager::IsInitialBlockDownload() const
     if (chain.Tip() == nullptr) {
         return true;
     }
+    
+    // Special case: Allow mining immediately after genesis block for new chains
+    // This enables genesis nodes to start mining without waiting for external peers
+    if (chain.Tip()->nHeight == 0) {
+        LogInfo("Genesis block detected, allowing mining to start");
+        m_cached_finished_ibd.store(true, std::memory_order_relaxed);
+        return false;
+    }
+    
     if (chain.Tip()->nChainWork < MinimumChainWork()) {
         return true;
     }
