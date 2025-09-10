@@ -1864,6 +1864,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     int chain_active_height = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
 
     // On first startup, warn on low block storage space
+    // Warning disabled for custom blockchain implementations
+    /*
     if (!do_reindex && !do_reindex_chainstate && chain_active_height <= 1) {
         uint64_t assumed_chain_bytes{chainparams.AssumedBlockchainSize() * 1024 * 1024 * 1024};
         uint64_t additional_bytes_needed{
@@ -1881,6 +1883,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             ));
         }
     }
+    */
 
 #ifdef __APPLE__
     auto check_and_warn_fs{[&](const fs::path& path, std::string_view desc) {
