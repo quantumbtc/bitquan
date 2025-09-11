@@ -499,17 +499,42 @@ static RPCHelpMan generatetoaddress()
         bool found = false;
         uint32_t nonce = 0;
         
+        // Simple extranonce to refresh coinbase/merkle periodically
+        uint32_t extranonce = 0;
         for (uint32_t tries = 0; tries < static_cast<uint32_t>(maxtries) && !found; ++tries) {
+            // Periodically refresh coinbase (changes merkle root) to explore new hashes
+            if ((tries % 4096) == 0 && tries != 0) {
+                ++extranonce;
+                CMutableTransaction cb2(*block.vtx[0]);
+                // Tweak scriptSig with extranonce bytes
+                std::vector<unsigned char> en;
+                en.resize(4);
+                en[0] = (extranonce) & 0xFF;
+                en[1] = (extranonce >> 8) & 0xFF;
+                en[2] = (extranonce >> 16) & 0xFF;
+                en[3] = (extranonce >> 24) & 0xFF;
+                cb2.vin[0].scriptSig = CScript(cb2.vin[0].scriptSig.begin(), cb2.vin[0].scriptSig.end());
+                cb2.vin[0].scriptSig << en;
+                node::AddMerkleRootAndCoinbase(block, MakeTransactionRef(std::move(cb2)), block.nVersion, block.nTime, block.nNonce);
+                nonce = 0; // restart nonce space after coinbase change
+            }
+
             block.nNonce = nonce++;
-            // Optionally update time
+            // Refresh time and bits as needed
             UpdateTime(&block, chainman.GetConsensus(), chainman.ActiveChain().Tip());
-            // Submit block
+
+            // Only submit if PoW target is met
+            const uint256 h = block.GetHash();
+            if (!CheckProofOfWork(h, block.nBits, chainman.GetConsensus())) {
+                continue;
+            }
+
             BlockValidationState state;
             std::shared_ptr<const CBlock> pblock = std::make_shared<const CBlock>(block);
             bool new_block = false;
             if (chainman.ProcessNewBlock(pblock, /*force_processing=*/true, /*min_pow_checked=*/true, &new_block)) {
                 found = true;
-                result.push_back(block.GetHash().GetHex());
+                result.push_back(h.GetHex());
             }
         }
         
