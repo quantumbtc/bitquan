@@ -446,10 +446,67 @@ static RPCHelpMan generatetoaddress()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    // Node-side mining is disabled. Direct users to CLI client-mining via RPC.
-    throw JSONRPCError(RPC_MISC_ERROR,
-        "Node mining disabled. Use CLI client mining: 'bitquantum-cli -generate loop -clientmine'\n"
-        "CLI will use getblocktemplate/submitblock over RPC.");
+    const int nblocks = request.params[0].getInt<int>();
+    const std::string address = request.params[1].get_str();
+    const int maxtries = request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>();
+
+    if (nblocks <= 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "nblocks must be positive");
+    }
+
+    if (maxtries <= 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "maxtries must be positive");
+    }
+
+    // Parse address
+    CTxDestination dest = DecodeDestination(address);
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+
+    // Get the node context
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.chainman) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Chain manager not available");
+    }
+
+    // Generate blocks
+    UniValue result(UniValue::VARR);
+    for (int i = 0; i < nblocks; ++i) {
+        // Create a new block template
+        const auto& chainman = node.chainman;
+        const auto& chain = chainman->ActiveChain();
+        
+        // Get the current block template
+        std::unique_ptr<BlockAssembler> assembler = chainman->BlockAssembler();
+        auto blocktemplate = assembler->CreateNewBlock(CScript() << OP_DUP << OP_HASH160 << ToByteVector(GetScriptForDestination(dest)) << OP_EQUALVERIFY << OP_CHECKSIG);
+        
+        if (!blocktemplate) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Failed to create block template");
+        }
+
+        // Mine the block
+        CBlock block = blocktemplate->block;
+        bool found = false;
+        uint32_t nonce = 0;
+        
+        for (uint32_t tries = 0; tries < maxtries && !found; ++tries) {
+            block.nNonce = nonce++;
+            
+            // Check if block is valid
+            BlockValidationState state;
+            if (chainman->ProcessNewBlock({&block, true, true, nullptr}, state)) {
+                found = true;
+                result.push_back(block.GetHash().GetHex());
+            }
+        }
+        
+        if (!found) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Failed to mine block within maxtries");
+        }
+    }
+
+    return result;
 },
     };
 }
