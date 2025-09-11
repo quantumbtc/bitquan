@@ -473,29 +473,41 @@ static RPCHelpMan generatetoaddress()
     // Generate blocks
     UniValue result(UniValue::VARR);
     for (int i = 0; i < nblocks; ++i) {
-        // Create a new block template
-        const auto& chainman = node.chainman;
-        const auto& chain = chainman->ActiveChain();
-        
-        // Get the current block template
-        std::unique_ptr<BlockAssembler> assembler = chainman->BlockAssembler();
-        auto blocktemplate = assembler->CreateNewBlock(CScript() << OP_DUP << OP_HASH160 << ToByteVector(GetScriptForDestination(dest)) << OP_EQUALVERIFY << OP_CHECKSIG);
-        
+        // Create a new block template using BlockAssembler
+        ChainstateManager& chainman = *node.chainman;
+        BlockAssembler::Options assemble_options;
+        ApplyArgsManOptions(gArgs, assemble_options);
+        node::BlockAssembler assembler(chainman.ActiveChainstate(), node.mempool.get(), assemble_options);
+        auto blocktemplate = assembler.CreateNewBlock();
+
         if (!blocktemplate) {
             throw JSONRPCError(RPC_MISC_ERROR, "Failed to create block template");
         }
 
-        // Mine the block
+        // Prepare block and set coinbase to destination
         CBlock block = blocktemplate->block;
+        if (block.vtx.empty()) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Block template has no transactions");
+        }
+        // Replace coinbase output script to pay to the provided destination
+        CMutableTransaction coinbase_mut(*block.vtx[0]);
+        if (coinbase_mut.vout.empty()) {
+            coinbase_mut.vout.resize(1);
+        }
+        coinbase_mut.vout[0].scriptPubKey = GetScriptForDestination(dest);
+        AddMerkleRootAndCoinbase(block, MakeTransactionRef(std::move(coinbase_mut)), block.nVersion, block.nTime, block.nNonce);
         bool found = false;
         uint32_t nonce = 0;
         
-        for (uint32_t tries = 0; tries < maxtries && !found; ++tries) {
+        for (uint32_t tries = 0; tries < static_cast<uint32_t>(maxtries) && !found; ++tries) {
             block.nNonce = nonce++;
-            
-            // Check if block is valid
+            // Optionally update time
+            UpdateTime(&block, chainman.GetConsensus(), chainman.ActiveChain().Tip());
+            // Submit block
             BlockValidationState state;
-            if (chainman->ProcessNewBlock({&block, true, true, nullptr}, state)) {
+            std::shared_ptr<const CBlock> pblock = std::make_shared<const CBlock>(block);
+            bool new_block = false;
+            if (chainman.ProcessNewBlock(pblock, /*force_processing=*/true, /*min_pow_checked=*/true, &new_block)) {
                 found = true;
                 result.push_back(block.GetHash().GetHex());
             }
