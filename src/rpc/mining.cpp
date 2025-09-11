@@ -476,7 +476,7 @@ static RPCHelpMan generatetoaddress()
         // Create a new block template using BlockAssembler
         ChainstateManager& chainman = *node.chainman;
         BlockAssembler::Options assemble_options;
-        ApplyArgsManOptions(gArgs, assemble_options);
+        if (node.args) ApplyArgsManOptions(*node.args, assemble_options);
         node::BlockAssembler assembler(chainman.ActiveChainstate(), node.mempool.get(), assemble_options);
         auto blocktemplate = assembler.CreateNewBlock();
 
@@ -495,7 +495,7 @@ static RPCHelpMan generatetoaddress()
             coinbase_mut.vout.resize(1);
         }
         coinbase_mut.vout[0].scriptPubKey = GetScriptForDestination(dest);
-        AddMerkleRootAndCoinbase(block, MakeTransactionRef(std::move(coinbase_mut)), block.nVersion, block.nTime, block.nNonce);
+        node::AddMerkleRootAndCoinbase(block, MakeTransactionRef(std::move(coinbase_mut)), block.nVersion, block.nTime, block.nNonce);
         bool found = false;
         uint32_t nonce = 0;
         
