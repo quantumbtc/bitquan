@@ -232,13 +232,17 @@ public:
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
                 std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
-            }
-            
-            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                
+                // Verify the updated genesis block
+                if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                    std::cout << "WARNING: Updated genesis block still does not meet proof-of-work requirements" << std::endl;
+                    std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
+                } else {
+                    std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
+                }
+            } else {
                 std::cout << "WARNING: Could not find valid nonce for genesis block" << std::endl;
                 std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
-            } else {
-                std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
             }
         } else {
             std::cout << "Genesis block proof-of-work verification passed" << std::endl;
@@ -415,13 +419,17 @@ pchMessageStart[3] = 0xda;
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
                 std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
-            }
-            
-            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                
+                // Verify the updated genesis block
+                if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                    std::cout << "WARNING: Updated genesis block still does not meet proof-of-work requirements" << std::endl;
+                    std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
+                } else {
+                    std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
+                }
+            } else {
                 std::cout << "WARNING: Could not find valid nonce for genesis block" << std::endl;
                 std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
-            } else {
-                std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
             }
         } else {
             std::cout << "Genesis block proof-of-work verification passed" << std::endl;
@@ -595,13 +603,17 @@ pchMessageStart[3] = 0xca;
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
                 std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
-            }
-            
-            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                
+                // Verify the updated genesis block
+                if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                    std::cout << "WARNING: Updated genesis block still does not meet proof-of-work requirements" << std::endl;
+                    std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
+                } else {
+                    std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
+                }
+            } else {
                 std::cout << "WARNING: Could not find valid nonce for genesis block" << std::endl;
                 std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
-            } else {
-                std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
             }
         } else {
             std::cout << "Genesis block proof-of-work verification passed" << std::endl;
@@ -814,13 +826,17 @@ public:
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
                 std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
-            }
-            
-            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                
+                // Verify the updated genesis block
+                if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                    std::cout << "WARNING: Updated genesis block still does not meet proof-of-work requirements" << std::endl;
+                    std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
+                } else {
+                    std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
+                }
+            } else {
                 std::cout << "WARNING: Could not find valid nonce for genesis block" << std::endl;
                 std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
-            } else {
-                std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
             }
         } else {
             std::cout << "Genesis block proof-of-work verification passed" << std::endl;
@@ -1006,13 +1022,17 @@ public:
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
                 std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
-            }
-            
-            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                
+                // Verify the updated genesis block
+                if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
+                    std::cout << "WARNING: Updated genesis block still does not meet proof-of-work requirements" << std::endl;
+                    std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
+                } else {
+                    std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
+                }
+            } else {
                 std::cout << "WARNING: Could not find valid nonce for genesis block" << std::endl;
                 std::cout << "WARNING: Continuing with invalid genesis block for debugging purposes" << std::endl;
-            } else {
-                std::cout << "Genesis block proof-of-work verification passed after nonce search" << std::endl;
             }
         } else {
             std::cout << "Genesis block proof-of-work verification passed" << std::endl;
