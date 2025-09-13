@@ -9,12 +9,7 @@
 #include <arith_uint256.h>
 #include <logging.h>
 #include <streams.h>
-#include <thread>
-#include <atomic>
-#include <vector>
-#include <limits>
 #include <chrono>
-#include <algorithm>
 
 namespace RandomQMining {
 
@@ -99,98 +94,55 @@ MiningResult MultiThreadedMining(const CBlockHeader& block, unsigned int nBits, 
         return result;
     }
     
-    // Determine number of threads to use
-    if (thread_count <= 0) {
-        thread_count = std::thread::hardware_concurrency();
-        if (thread_count <= 0) thread_count = 1; // Fallback to single thread
-    }
+    // For MinGW compatibility, use single-threaded mining
+    // Multi-threading with proper synchronization requires atomic operations
+    // which are problematic in MinGW cross-compilation environment
+    LogInfo("Starting RandomQ mining (single-threaded for MinGW compatibility), max_tries=%llu", max_tries);
     
-    // Limit thread count to prevent excessive resource usage
-    thread_count = std::min(thread_count, 16);
-    
-    LogInfo("Starting multi-threaded RandomQ mining with %d threads, max_tries=%llu", thread_count, max_tries);
-    
-    // Shared state for coordination between threads
-    std::atomic<bool> found{false};
-    std::atomic<uint32_t> found_nonce{0};
-    std::atomic<uint256> found_hash{};
-    std::atomic<uint64_t> total_hashes{0};
-    
-    // Calculate nonce range per thread
-    const uint64_t nonces_per_thread = max_tries / thread_count;
-    const uint32_t nonce_increment = 1;
-    
+    // Single-threaded mining loop
+    uint64_t hashes_computed = 0;
+    uint32_t nonce = block.nNonce;
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // Worker function for each thread
-    auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-        uint64_t local_hashes = 0;
-        uint32_t nonce = start_nonce;
+    for (uint64_t i = 0; i < max_tries; ++i) {
+        // Calculate hash for current nonce
+        uint256 hash = CalculateRandomQHashOptimized(block, nonce);
+        hashes_computed++;
         
-        while (!found && local_hashes < thread_max_tries) {
-            // Check if another thread found a solution
-            if (found) break;
+        // Check if this nonce meets the target
+        if (UintToArith256(hash) <= target) {
+            result.found = true;
+            result.nonce = nonce;
+            result.hash = hash;
+            result.hashes_computed = hashes_computed;
             
-            // Calculate hash for current nonce
-            uint256 hash = CalculateRandomQHashOptimized(block, nonce);
-            local_hashes++;
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration<double>(end_time - start_time).count();
+            result.elapsed_time = elapsed;
+            result.hash_rate = (elapsed > 0) ? (hashes_computed / elapsed) : 0.0;
             
-            // Check if this nonce meets the target
-            if (UintToArith256(hash) <= target) {
-                // Try to claim the solution
-                if (!found.exchange(true)) {
-                    found_nonce = nonce;
-                    found_hash = hash;
-                    LogInfo("Found valid nonce: %u, hash: %s", nonce, hash.GetHex());
-                }
-                break;
-            }
-            
-            nonce += nonce_increment;
-            
-            // Prevent nonce overflow
-            if (nonce < start_nonce) {
-                break;
-            }
+            LogInfo("Found valid nonce: %u, hash: %s, Hashes: %llu, Time: %.2fs, Rate: %.2f H/s", 
+                    result.nonce, result.hash.GetHex(), result.hashes_computed, result.elapsed_time, result.hash_rate);
+            return result;
         }
         
-        // Update total hash count
-        total_hashes += local_hashes;
-    };
-    
-    // Start worker threads
-    std::vector<std::thread> workers;
-    for (int i = 0; i < thread_count; ++i) {
-        uint32_t start_nonce = block.nNonce + (i * nonces_per_thread);
-        uint64_t thread_tries = (i == thread_count - 1) ? 
-            (max_tries - i * nonces_per_thread) : nonces_per_thread;
+        nonce++;
         
-        workers.emplace_back(worker, start_nonce, thread_tries);
+        // Prevent nonce overflow
+        if (nonce == 0) {
+            break;
+        }
     }
     
-    // Wait for all threads to complete
-    for (auto& worker : workers) {
-        worker.join();
-    }
-    
+    // Mining failed
     auto end_time = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration<double>(end_time - start_time).count();
-    
-    // Set result
-    result.found = found;
-    result.nonce = found_nonce;
-    result.hash = found_hash;
-    result.hashes_computed = total_hashes;
+    result.hashes_computed = hashes_computed;
     result.elapsed_time = elapsed;
-    result.hash_rate = (elapsed > 0) ? (total_hashes / elapsed) : 0.0;
+    result.hash_rate = (elapsed > 0) ? (hashes_computed / elapsed) : 0.0;
     
-    if (result.found) {
-        LogInfo("Mining successful! Nonce: %u, Hash: %s, Hashes: %llu, Time: %.2fs, Rate: %.2f H/s", 
-                result.nonce, result.hash.GetHex(), result.hashes_computed, result.elapsed_time, result.hash_rate);
-    } else {
-        LogInfo("Mining failed after %llu hashes in %.2fs (%.2f H/s)", 
-                result.hashes_computed, result.elapsed_time, result.hash_rate);
-    }
+    LogInfo("Mining failed after %llu hashes in %.2fs (%.2f H/s)", 
+            result.hashes_computed, result.elapsed_time, result.hash_rate);
     
     return result;
 }
