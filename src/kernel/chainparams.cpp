@@ -155,7 +155,7 @@ public:
         consensus.hashGenesisBlock = genesis.GetHash();
         
         // Verify genesis block meets proof-of-work requirements
-        if (!CheckProofOfWork(genesis, consensus.powLimit)) {
+        if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
             LogPrintf("ERROR: Genesis block does not meet proof-of-work requirements!\n");
             LogPrintf("Genesis block hash: %s\n", consensus.hashGenesisBlock.GetHex());
             LogPrintf("Genesis merkle root: %s\n", genesis.hashMerkleRoot.GetHex());
@@ -196,7 +196,7 @@ public:
                 if (nonce == 0) break; // Prevent overflow
             }
             
-            if (nonce == 0 || !CheckProofOfWork(genesis, consensus.powLimit)) {
+            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
                 LogPrintf("WARNING: Could not find valid nonce for genesis block\n");
                 LogPrintf("WARNING: Continuing with invalid genesis block for debugging purposes\n");
             } else {
@@ -302,7 +302,7 @@ pchMessageStart[3] = 0xda;
         consensus.hashGenesisBlock = genesis.GetHash();
         
         // Verify genesis block meets proof-of-work requirements
-        if (!CheckProofOfWork(genesis, consensus.powLimit)) {
+        if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
             LogPrintf("ERROR: Genesis block does not meet proof-of-work requirements!\n");
             LogPrintf("Genesis block hash: %s\n", consensus.hashGenesisBlock.GetHex());
             LogPrintf("Genesis merkle root: %s\n", genesis.hashMerkleRoot.GetHex());
@@ -343,7 +343,7 @@ pchMessageStart[3] = 0xda;
                 if (nonce == 0) break; // Prevent overflow
             }
             
-            if (nonce == 0 || !CheckProofOfWork(genesis, consensus.powLimit)) {
+            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
                 LogPrintf("WARNING: Could not find valid nonce for genesis block\n");
                 LogPrintf("WARNING: Continuing with invalid genesis block for debugging purposes\n");
             } else {
@@ -446,7 +446,7 @@ pchMessageStart[3] = 0xca;
         consensus.hashGenesisBlock = genesis.GetHash();
         
         // Verify genesis block meets proof-of-work requirements
-        if (!CheckProofOfWork(genesis, consensus.powLimit)) {
+        if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
             LogPrintf("ERROR: Genesis block does not meet proof-of-work requirements!\n");
             LogPrintf("Genesis block hash: %s\n", consensus.hashGenesisBlock.GetHex());
             LogPrintf("Genesis merkle root: %s\n", genesis.hashMerkleRoot.GetHex());
@@ -487,7 +487,7 @@ pchMessageStart[3] = 0xca;
                 if (nonce == 0) break; // Prevent overflow
             }
             
-            if (nonce == 0 || !CheckProofOfWork(genesis, consensus.powLimit)) {
+            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
                 LogPrintf("WARNING: Could not find valid nonce for genesis block\n");
                 LogPrintf("WARNING: Continuing with invalid genesis block for debugging purposes\n");
             } else {
@@ -629,7 +629,7 @@ public:
         consensus.hashGenesisBlock = genesis.GetHash();
         
         // Verify genesis block meets proof-of-work requirements
-        if (!CheckProofOfWork(genesis, consensus.powLimit)) {
+        if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
             LogPrintf("ERROR: Genesis block does not meet proof-of-work requirements!\n");
             LogPrintf("Genesis block hash: %s\n", consensus.hashGenesisBlock.GetHex());
             LogPrintf("Genesis merkle root: %s\n", genesis.hashMerkleRoot.GetHex());
@@ -670,7 +670,7 @@ public:
                 if (nonce == 0) break; // Prevent overflow
             }
             
-            if (nonce == 0 || !CheckProofOfWork(genesis, consensus.powLimit)) {
+            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
                 LogPrintf("WARNING: Could not find valid nonce for genesis block\n");
                 LogPrintf("WARNING: Continuing with invalid genesis block for debugging purposes\n");
             } else {
@@ -785,7 +785,7 @@ public:
         consensus.hashGenesisBlock = genesis.GetHash();
         
         // Verify genesis block meets proof-of-work requirements
-        if (!CheckProofOfWork(genesis, consensus.powLimit)) {
+        if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
             LogPrintf("ERROR: Genesis block does not meet proof-of-work requirements!\n");
             LogPrintf("Genesis block hash: %s\n", consensus.hashGenesisBlock.GetHex());
             LogPrintf("Genesis merkle root: %s\n", genesis.hashMerkleRoot.GetHex());
@@ -826,7 +826,7 @@ public:
                 if (nonce == 0) break; // Prevent overflow
             }
             
-            if (nonce == 0 || !CheckProofOfWork(genesis, consensus.powLimit)) {
+            if (nonce == 0 || !CheckProofOfWork(genesis, genesis.nBits, consensus)) {
                 LogPrintf("WARNING: Could not find valid nonce for genesis block\n");
                 LogPrintf("WARNING: Continuing with invalid genesis block for debugging purposes\n");
             } else {
