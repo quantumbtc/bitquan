@@ -19,11 +19,6 @@
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <uint256.h>
-#include <thread>
-#include <chrono>
-#include <atomic>
-#include <mutex>
-#include <vector>
 #include <iomanip>
 #include <iostream>
 #include <util/chaintype.h>
@@ -173,65 +168,41 @@ public:
             std::cout << "Target: " << target.GetHex() << std::endl;
             std::cout << "Hash <= Target: " << ((UintToArith256(consensus.hashGenesisBlock) <= target) ? "true" : "false") << std::endl;
             
-            // Try to find a valid nonce for the genesis block using multi-threading
-            std::cout << "Attempting to find valid nonce for genesis block using multi-threading..." << std::endl;
+            // Try to find a valid nonce for the genesis block (single-threaded for MinGW compatibility)
+            std::cout << "Attempting to find valid nonce for genesis block..." << std::endl;
             
-            // Multi-threaded nonce search
-            const int thread_count = std::min(4, (int)std::thread::hardware_concurrency());
+            // Single-threaded nonce search to avoid MinGW atomic linking issues
             const uint64_t max_tries = 1000000; // Limit search to prevent infinite loop
-            const uint64_t nonces_per_thread = max_tries / thread_count;
+            CBlockHeader genesisHeader = genesis;
+            uint32_t nonce = 0;
+            bool found = false;
+            uint32_t found_nonce = 0;
+            uint256 found_hash;
             
-            std::atomic<bool> found{false};
-            std::atomic<uint32_t> found_nonce{0};
-            std::atomic<uint256> found_hash{};
-            std::mutex result_mutex;
+            std::cout << "Using single-threaded search, max_tries=" << max_tries << std::endl;
             
-            std::cout << "Using " << thread_count << " threads for nonce search, max_tries=" << max_tries << std::endl;
-            
-            auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-                CBlockHeader genesisHeader = genesis;
-                uint32_t nonce = start_nonce;
+            for (uint64_t i = 0; i < max_tries; ++i) {
+                genesisHeader.nNonce = nonce;
+                uint256 hash = genesisHeader.GetHash();
                 
-                for (uint64_t i = 0; i < thread_max_tries && !found; ++i) {
-                    genesisHeader.nNonce = nonce;
-                    uint256 hash = genesisHeader.GetHash();
-                    
-                    if (UintToArith256(hash) <= target) {
-                        std::lock_guard<std::mutex> lock(result_mutex);
-                        if (!found.exchange(true)) {
-                            found_nonce = nonce;
-                            found_hash = hash;
-                            std::cout << "Found valid nonce: " << nonce << " (thread " << std::this_thread::get_id() << ")" << std::endl;
-                            std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
-                        }
-                        break;
-                    }
-                    
-                    nonce++;
-                    if (nonce == 0) break; // Prevent overflow
+                if (UintToArith256(hash) <= target) {
+                    found = true;
+                    found_nonce = nonce;
+                    found_hash = hash;
+                    std::cout << "Found valid nonce: " << nonce << std::endl;
+                    std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
+                    break;
                 }
-            };
-            
-            // Start worker threads
-            std::vector<std::thread> workers;
-            for (int i = 0; i < thread_count; ++i) {
-                uint32_t start_nonce = i * nonces_per_thread;
-                uint64_t thread_tries = (i == thread_count - 1) ? 
-                    (max_tries - i * nonces_per_thread) : nonces_per_thread;
                 
-                workers.emplace_back(worker, start_nonce, thread_tries);
-            }
-            
-            // Wait for all threads to complete
-            for (auto& worker : workers) {
-                worker.join();
+                nonce++;
+                if (nonce == 0) break; // Prevent overflow
             }
             
             if (found) {
                 // Update genesis block with valid nonce
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
-                std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
+                std::cout << "Genesis block updated with valid nonce " << found_nonce << std::endl;
                 
                 // Verify the updated genesis block
                 if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
@@ -360,65 +331,41 @@ pchMessageStart[3] = 0xda;
             std::cout << "Target: " << target.GetHex() << std::endl;
             std::cout << "Hash <= Target: " << ((UintToArith256(consensus.hashGenesisBlock) <= target) ? "true" : "false") << std::endl;
             
-            // Try to find a valid nonce for the genesis block using multi-threading
-            std::cout << "Attempting to find valid nonce for genesis block using multi-threading..." << std::endl;
+            // Try to find a valid nonce for the genesis block (single-threaded for MinGW compatibility)
+            std::cout << "Attempting to find valid nonce for genesis block..." << std::endl;
             
-            // Multi-threaded nonce search
-            const int thread_count = std::min(4, (int)std::thread::hardware_concurrency());
+            // Single-threaded nonce search to avoid MinGW atomic linking issues
             const uint64_t max_tries = 1000000; // Limit search to prevent infinite loop
-            const uint64_t nonces_per_thread = max_tries / thread_count;
+            CBlockHeader genesisHeader = genesis;
+            uint32_t nonce = 0;
+            bool found = false;
+            uint32_t found_nonce = 0;
+            uint256 found_hash;
             
-            std::atomic<bool> found{false};
-            std::atomic<uint32_t> found_nonce{0};
-            std::atomic<uint256> found_hash{};
-            std::mutex result_mutex;
+            std::cout << "Using single-threaded search, max_tries=" << max_tries << std::endl;
             
-            std::cout << "Using " << thread_count << " threads for nonce search, max_tries=" << max_tries << std::endl;
-            
-            auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-                CBlockHeader genesisHeader = genesis;
-                uint32_t nonce = start_nonce;
+            for (uint64_t i = 0; i < max_tries; ++i) {
+                genesisHeader.nNonce = nonce;
+                uint256 hash = genesisHeader.GetHash();
                 
-                for (uint64_t i = 0; i < thread_max_tries && !found; ++i) {
-                    genesisHeader.nNonce = nonce;
-                    uint256 hash = genesisHeader.GetHash();
-                    
-                    if (UintToArith256(hash) <= target) {
-                        std::lock_guard<std::mutex> lock(result_mutex);
-                        if (!found.exchange(true)) {
-                            found_nonce = nonce;
-                            found_hash = hash;
-                            std::cout << "Found valid nonce: " << nonce << " (thread " << std::this_thread::get_id() << ")" << std::endl;
-                            std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
-                        }
-                        break;
-                    }
-                    
-                    nonce++;
-                    if (nonce == 0) break; // Prevent overflow
+                if (UintToArith256(hash) <= target) {
+                    found = true;
+                    found_nonce = nonce;
+                    found_hash = hash;
+                    std::cout << "Found valid nonce: " << nonce << std::endl;
+                    std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
+                    break;
                 }
-            };
-            
-            // Start worker threads
-            std::vector<std::thread> workers;
-            for (int i = 0; i < thread_count; ++i) {
-                uint32_t start_nonce = i * nonces_per_thread;
-                uint64_t thread_tries = (i == thread_count - 1) ? 
-                    (max_tries - i * nonces_per_thread) : nonces_per_thread;
                 
-                workers.emplace_back(worker, start_nonce, thread_tries);
-            }
-            
-            // Wait for all threads to complete
-            for (auto& worker : workers) {
-                worker.join();
+                nonce++;
+                if (nonce == 0) break; // Prevent overflow
             }
             
             if (found) {
                 // Update genesis block with valid nonce
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
-                std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
+                std::cout << "Genesis block updated with valid nonce " << found_nonce << std::endl;
                 
                 // Verify the updated genesis block
                 if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
@@ -544,65 +491,41 @@ pchMessageStart[3] = 0xca;
             std::cout << "Target: " << target.GetHex() << std::endl;
             std::cout << "Hash <= Target: " << ((UintToArith256(consensus.hashGenesisBlock) <= target) ? "true" : "false") << std::endl;
             
-            // Try to find a valid nonce for the genesis block using multi-threading
-            std::cout << "Attempting to find valid nonce for genesis block using multi-threading..." << std::endl;
+            // Try to find a valid nonce for the genesis block (single-threaded for MinGW compatibility)
+            std::cout << "Attempting to find valid nonce for genesis block..." << std::endl;
             
-            // Multi-threaded nonce search
-            const int thread_count = std::min(4, (int)std::thread::hardware_concurrency());
+            // Single-threaded nonce search to avoid MinGW atomic linking issues
             const uint64_t max_tries = 1000000; // Limit search to prevent infinite loop
-            const uint64_t nonces_per_thread = max_tries / thread_count;
+            CBlockHeader genesisHeader = genesis;
+            uint32_t nonce = 0;
+            bool found = false;
+            uint32_t found_nonce = 0;
+            uint256 found_hash;
             
-            std::atomic<bool> found{false};
-            std::atomic<uint32_t> found_nonce{0};
-            std::atomic<uint256> found_hash{};
-            std::mutex result_mutex;
+            std::cout << "Using single-threaded search, max_tries=" << max_tries << std::endl;
             
-            std::cout << "Using " << thread_count << " threads for nonce search, max_tries=" << max_tries << std::endl;
-            
-            auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-                CBlockHeader genesisHeader = genesis;
-                uint32_t nonce = start_nonce;
+            for (uint64_t i = 0; i < max_tries; ++i) {
+                genesisHeader.nNonce = nonce;
+                uint256 hash = genesisHeader.GetHash();
                 
-                for (uint64_t i = 0; i < thread_max_tries && !found; ++i) {
-                    genesisHeader.nNonce = nonce;
-                    uint256 hash = genesisHeader.GetHash();
-                    
-                    if (UintToArith256(hash) <= target) {
-                        std::lock_guard<std::mutex> lock(result_mutex);
-                        if (!found.exchange(true)) {
-                            found_nonce = nonce;
-                            found_hash = hash;
-                            std::cout << "Found valid nonce: " << nonce << " (thread " << std::this_thread::get_id() << ")" << std::endl;
-                            std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
-                        }
-                        break;
-                    }
-                    
-                    nonce++;
-                    if (nonce == 0) break; // Prevent overflow
+                if (UintToArith256(hash) <= target) {
+                    found = true;
+                    found_nonce = nonce;
+                    found_hash = hash;
+                    std::cout << "Found valid nonce: " << nonce << std::endl;
+                    std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
+                    break;
                 }
-            };
-            
-            // Start worker threads
-            std::vector<std::thread> workers;
-            for (int i = 0; i < thread_count; ++i) {
-                uint32_t start_nonce = i * nonces_per_thread;
-                uint64_t thread_tries = (i == thread_count - 1) ? 
-                    (max_tries - i * nonces_per_thread) : nonces_per_thread;
                 
-                workers.emplace_back(worker, start_nonce, thread_tries);
-            }
-            
-            // Wait for all threads to complete
-            for (auto& worker : workers) {
-                worker.join();
+                nonce++;
+                if (nonce == 0) break; // Prevent overflow
             }
             
             if (found) {
                 // Update genesis block with valid nonce
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
-                std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
+                std::cout << "Genesis block updated with valid nonce " << found_nonce << std::endl;
                 
                 // Verify the updated genesis block
                 if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
@@ -767,65 +690,41 @@ public:
             std::cout << "Target: " << target.GetHex() << std::endl;
             std::cout << "Hash <= Target: " << ((UintToArith256(consensus.hashGenesisBlock) <= target) ? "true" : "false") << std::endl;
             
-            // Try to find a valid nonce for the genesis block using multi-threading
-            std::cout << "Attempting to find valid nonce for genesis block using multi-threading..." << std::endl;
+            // Try to find a valid nonce for the genesis block (single-threaded for MinGW compatibility)
+            std::cout << "Attempting to find valid nonce for genesis block..." << std::endl;
             
-            // Multi-threaded nonce search
-            const int thread_count = std::min(4, (int)std::thread::hardware_concurrency());
+            // Single-threaded nonce search to avoid MinGW atomic linking issues
             const uint64_t max_tries = 1000000; // Limit search to prevent infinite loop
-            const uint64_t nonces_per_thread = max_tries / thread_count;
+            CBlockHeader genesisHeader = genesis;
+            uint32_t nonce = 0;
+            bool found = false;
+            uint32_t found_nonce = 0;
+            uint256 found_hash;
             
-            std::atomic<bool> found{false};
-            std::atomic<uint32_t> found_nonce{0};
-            std::atomic<uint256> found_hash{};
-            std::mutex result_mutex;
+            std::cout << "Using single-threaded search, max_tries=" << max_tries << std::endl;
             
-            std::cout << "Using " << thread_count << " threads for nonce search, max_tries=" << max_tries << std::endl;
-            
-            auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-                CBlockHeader genesisHeader = genesis;
-                uint32_t nonce = start_nonce;
+            for (uint64_t i = 0; i < max_tries; ++i) {
+                genesisHeader.nNonce = nonce;
+                uint256 hash = genesisHeader.GetHash();
                 
-                for (uint64_t i = 0; i < thread_max_tries && !found; ++i) {
-                    genesisHeader.nNonce = nonce;
-                    uint256 hash = genesisHeader.GetHash();
-                    
-                    if (UintToArith256(hash) <= target) {
-                        std::lock_guard<std::mutex> lock(result_mutex);
-                        if (!found.exchange(true)) {
-                            found_nonce = nonce;
-                            found_hash = hash;
-                            std::cout << "Found valid nonce: " << nonce << " (thread " << std::this_thread::get_id() << ")" << std::endl;
-                            std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
-                        }
-                        break;
-                    }
-                    
-                    nonce++;
-                    if (nonce == 0) break; // Prevent overflow
+                if (UintToArith256(hash) <= target) {
+                    found = true;
+                    found_nonce = nonce;
+                    found_hash = hash;
+                    std::cout << "Found valid nonce: " << nonce << std::endl;
+                    std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
+                    break;
                 }
-            };
-            
-            // Start worker threads
-            std::vector<std::thread> workers;
-            for (int i = 0; i < thread_count; ++i) {
-                uint32_t start_nonce = i * nonces_per_thread;
-                uint64_t thread_tries = (i == thread_count - 1) ? 
-                    (max_tries - i * nonces_per_thread) : nonces_per_thread;
                 
-                workers.emplace_back(worker, start_nonce, thread_tries);
-            }
-            
-            // Wait for all threads to complete
-            for (auto& worker : workers) {
-                worker.join();
+                nonce++;
+                if (nonce == 0) break; // Prevent overflow
             }
             
             if (found) {
                 // Update genesis block with valid nonce
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
-                std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
+                std::cout << "Genesis block updated with valid nonce " << found_nonce << std::endl;
                 
                 // Verify the updated genesis block
                 if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {
@@ -963,65 +862,41 @@ public:
             std::cout << "Target: " << target.GetHex() << std::endl;
             std::cout << "Hash <= Target: " << ((UintToArith256(consensus.hashGenesisBlock) <= target) ? "true" : "false") << std::endl;
             
-            // Try to find a valid nonce for the genesis block using multi-threading
-            std::cout << "Attempting to find valid nonce for genesis block using multi-threading..." << std::endl;
+            // Try to find a valid nonce for the genesis block (single-threaded for MinGW compatibility)
+            std::cout << "Attempting to find valid nonce for genesis block..." << std::endl;
             
-            // Multi-threaded nonce search
-            const int thread_count = std::min(4, (int)std::thread::hardware_concurrency());
+            // Single-threaded nonce search to avoid MinGW atomic linking issues
             const uint64_t max_tries = 1000000; // Limit search to prevent infinite loop
-            const uint64_t nonces_per_thread = max_tries / thread_count;
+            CBlockHeader genesisHeader = genesis;
+            uint32_t nonce = 0;
+            bool found = false;
+            uint32_t found_nonce = 0;
+            uint256 found_hash;
             
-            std::atomic<bool> found{false};
-            std::atomic<uint32_t> found_nonce{0};
-            std::atomic<uint256> found_hash{};
-            std::mutex result_mutex;
+            std::cout << "Using single-threaded search, max_tries=" << max_tries << std::endl;
             
-            std::cout << "Using " << thread_count << " threads for nonce search, max_tries=" << max_tries << std::endl;
-            
-            auto worker = [&](uint32_t start_nonce, uint64_t thread_max_tries) {
-                CBlockHeader genesisHeader = genesis;
-                uint32_t nonce = start_nonce;
+            for (uint64_t i = 0; i < max_tries; ++i) {
+                genesisHeader.nNonce = nonce;
+                uint256 hash = genesisHeader.GetHash();
                 
-                for (uint64_t i = 0; i < thread_max_tries && !found; ++i) {
-                    genesisHeader.nNonce = nonce;
-                    uint256 hash = genesisHeader.GetHash();
-                    
-                    if (UintToArith256(hash) <= target) {
-                        std::lock_guard<std::mutex> lock(result_mutex);
-                        if (!found.exchange(true)) {
-                            found_nonce = nonce;
-                            found_hash = hash;
-                            std::cout << "Found valid nonce: " << nonce << " (thread " << std::this_thread::get_id() << ")" << std::endl;
-                            std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
-                        }
-                        break;
-                    }
-                    
-                    nonce++;
-                    if (nonce == 0) break; // Prevent overflow
+                if (UintToArith256(hash) <= target) {
+                    found = true;
+                    found_nonce = nonce;
+                    found_hash = hash;
+                    std::cout << "Found valid nonce: " << nonce << std::endl;
+                    std::cout << "New genesis block hash: " << hash.GetHex() << std::endl;
+                    break;
                 }
-            };
-            
-            // Start worker threads
-            std::vector<std::thread> workers;
-            for (int i = 0; i < thread_count; ++i) {
-                uint32_t start_nonce = i * nonces_per_thread;
-                uint64_t thread_tries = (i == thread_count - 1) ? 
-                    (max_tries - i * nonces_per_thread) : nonces_per_thread;
                 
-                workers.emplace_back(worker, start_nonce, thread_tries);
-            }
-            
-            // Wait for all threads to complete
-            for (auto& worker : workers) {
-                worker.join();
+                nonce++;
+                if (nonce == 0) break; // Prevent overflow
             }
             
             if (found) {
                 // Update genesis block with valid nonce
                 genesis.nNonce = found_nonce;
                 consensus.hashGenesisBlock = found_hash;
-                std::cout << "Genesis block updated with valid nonce " << found_nonce.load() << std::endl;
+                std::cout << "Genesis block updated with valid nonce " << found_nonce << std::endl;
                 
                 // Verify the updated genesis block
                 if (!CheckProofOfWork(genesis, genesis.nBits, consensus)) {

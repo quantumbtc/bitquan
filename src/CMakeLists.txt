@@ -148,6 +148,7 @@ target_link_libraries(bitquantum_common
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
     $<$<PLATFORM_ID:Windows>:ws2_32>
+    $<$<CXX_COMPILER_ID:GNU>:$<$<BOOL:${CMAKE_CROSSCOMPILING}>:atomic>>
 )
 
 include(InstallBinaryComponent)
