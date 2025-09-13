@@ -25,6 +25,20 @@ uint256 CalculateRandomQHash(const CBlockHeader& block);
 /** Optimized RandomQ hash calculation for mining */
 uint256 CalculateRandomQHashOptimized(const CBlockHeader& block, uint32_t nonce);
 
+/** Multi-threaded RandomQ mining result */
+struct MiningResult {
+    bool found = false;
+    uint32_t nonce = 0;
+    uint256 hash;
+    uint64_t hashes_computed = 0;
+    double elapsed_time = 0.0;
+    double hash_rate = 0.0;
+};
+
+/** Multi-threaded RandomQ mining with configurable thread count */
+MiningResult MultiThreadedMining(const CBlockHeader& block, unsigned int nBits, const uint256& powLimit, 
+                                 uint64_t max_tries, int thread_count = 0);
+
 } // namespace RandomQMining
 
 #endif // BITQUANTUM_CRYPTO_RANDOMQ_MINING_H

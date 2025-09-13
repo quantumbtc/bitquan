@@ -31,7 +31,7 @@ public:
         // RandomQ
         unsigned char randomq_hash[CRandomQ::OUTPUT_SIZE];
         randomq.Reset();
-        randomq.Write(std::span<const unsigned char>(first_hash, CSHA256::OUTPUT_SIZE));
+        randomq.Initialize(first_hash, CSHA256::OUTPUT_SIZE);
         randomq.Finalize(randomq_hash);
         
         // Second SHA256
