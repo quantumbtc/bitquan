@@ -321,16 +321,16 @@ static std::string UpdateNonceInBlockHex(const std::string& tmpl_hex, uint32_t n
 
 static std::string BuildFullBlockHex(const CBlock& block)
 {
-	// Serialize header
 	std::vector<unsigned char> bytes;
-	VectorWriter(bytes, 0, static_cast<const CBlockHeader&>(block));
-	// Varint count
-	WriteCompactSize(bytes, block.vtx.size());
-	// Append each tx bytes from hex encoding
+	// Start with header
+	VectorWriter vw(bytes, 0, static_cast<const CBlockHeader&>(block));
+	// Varint count using the same stream
+	WriteCompactSize(vw, block.vtx.size());
+	// Append each tx raw bytes
 	for (const auto& txref : block.vtx) {
 		const std::string tx_hex = EncodeHexTx(*txref);
 		std::vector<unsigned char> tx_bytes = ParseHex(tx_hex);
-		bytes.insert(bytes.end(), tx_bytes.begin(), tx_bytes.end());
+		vw.write(std::as_bytes(std::span<const unsigned char>(tx_bytes.data(), tx_bytes.size())));
 	}
 	return HexStr(bytes);
 }
@@ -362,7 +362,7 @@ static void MinerLoop()
 	});
 
 	try {
-		while (!g_stop.load()) {
+	while (!g_stop.load()) {
 		// getblocktemplate (object param with rules)
 		UniValue rules(UniValue::VARR); rules.push_back("segwit");
 		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules);
@@ -416,7 +416,7 @@ static void MinerLoop()
 		for (auto& th : miners) th.join();
 
 		if (found.load()) {
-			// Submit by patching nonce bytes in template hex
+			// Submit by patching nonce bytes in template hex or full-encode locally
 			std::string sub_hex;
 			if (!tmpl_hex.empty()) {
 				sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
@@ -428,7 +428,7 @@ static void MinerLoop()
 		} else {
 			// refresh template
 		}
-		}
+	}
 	} catch (const std::exception& e) {
 		g_stop.store(true);
 		tfm::format(std::cerr, "mining loop error: %s\n", e.what());
