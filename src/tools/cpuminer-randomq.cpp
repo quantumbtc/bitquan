@@ -456,17 +456,18 @@ static void MinerLoop()
 				sub_hex = BuildFullBlockHex(block);
 			}
 			UniValue sub = RpcCallWait("submitblock", {sub_hex});
-			// Print raw submit result
+			// Print raw submit result (robust)
 			{
 				const UniValue err = sub.find_value("error");
 				const UniValue resv = sub.find_value("result");
-				if (!err.isNull() && !err.isNull()) {
+				if (!err.isNull()) {
 					std::string emsg = err.isObject() && !err.find_value("message").isNull() ? err.find_value("message").get_str() : err.write();
 					tfm::format(std::cout, "[Submit] result=%s error=%s\n", resv.isNull() ? "null" : resv.write().c_str(), emsg.c_str());
 				} else {
-					// Per JSON-RPC, error=null and result may be null or empty string on success
 					tfm::format(std::cout, "[Submit] result=%s error=null\n", resv.isNull() ? "null" : resv.write().c_str());
 				}
+				// Also print full JSON-RPC response for debugging
+				tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
 				std::cout.flush();
 			}
 			// Print tip info after submit
