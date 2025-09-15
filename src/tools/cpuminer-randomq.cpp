@@ -513,10 +513,29 @@ static void MinerLoop()
 		}
 		const UniValue err = gbt.find_value("error");
 		if (!err.isNull()) {
-			throw std::runtime_error(err.write());
+			// Check if it's a connection error that we should retry
+			std::string error_msg = err.write();
+			if (error_msg.find("not connected") != std::string::npos || 
+				error_msg.find("connection") != std::string::npos ||
+				error_msg.find("timeout") != std::string::npos) {
+				tfm::format(std::cout, "[Info] Node connection lost, retrying in 5 seconds...\n");
+				std::cout.flush();
+				for (int i = 0; i < 5 && !g_stop.load(); ++i) {
+					std::this_thread::sleep_for(1s);
+				}
+				continue; // Retry the loop
+			}
+			throw std::runtime_error(error_msg);
 		}
 		const UniValue res = gbt.find_value("result");
-		if (res.isNull()) throw std::runtime_error("GBT returned null");
+		if (res.isNull()) {
+			tfm::format(std::cout, "[Info] GBT returned null, retrying in 5 seconds...\n");
+			std::cout.flush();
+			for (int i = 0; i < 5 && !g_stop.load(); ++i) {
+				std::this_thread::sleep_for(1s);
+			}
+			continue; // Retry the loop
+		}
 
 		CBlock block;
 		std::string tmpl_hex;
@@ -611,6 +630,13 @@ static void MinerLoop()
 				if (!err.isNull()) {
 					std::string emsg = err.isObject() && !err.find_value("message").isNull() ? err.find_value("message").get_str() : err.write();
 					tfm::format(std::cout, "[Submit] result=%s error=%s\n", resv.isNull() ? "null" : resv.write().c_str(), emsg.c_str());
+					// Check if it's a connection error
+					if (emsg.find("not connected") != std::string::npos || 
+						emsg.find("connection") != std::string::npos ||
+						emsg.find("timeout") != std::string::npos) {
+						tfm::format(std::cout, "[Info] Submit failed due to connection error, will retry next template\n");
+						std::cout.flush();
+					}
 				} else {
 					tfm::format(std::cout, "[Submit] result=%s error=null\n", resv.isNull() ? "null" : resv.write().c_str());
 				}
