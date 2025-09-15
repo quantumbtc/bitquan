@@ -117,14 +117,14 @@ static UniValue DoRpcRequest(const std::string& method, const UniValue& params_a
 		port = rpcconnect_port;
 	}
 
-	ra ii_event_base base = obtain_event_base();
-	ra ii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
+	raii_event_base base = obtain_event_base();
+	raii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
 
 	const int timeout = gArgs.GetIntArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT);
 	if (timeout > 0) evhttp_connection_set_timeout(evcon.get(), timeout);
 
 	HTTPReply response;
-	ra ii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
+	raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
 	if (!req) throw std::runtime_error("create http request failed");
 
 	std::string auth = GetAuth();
