@@ -375,7 +375,10 @@ static void MinerLoop()
 	while (!g_stop.load()) {
 		// getblocktemplate (object param with rules)
 		UniValue rules(UniValue::VARR); rules.push_back("segwit");
-		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules);
+		UniValue caps(UniValue::VARR); caps.push_back("coinbasetxn");
+		UniValue req(UniValue::VOBJ);
+		req.pushKV("rules", rules);
+		req.pushKV("capabilities", caps);
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
 		UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
 		// Debug: print getblocktemplate summary
