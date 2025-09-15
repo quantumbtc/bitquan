@@ -257,16 +257,9 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 		int32_t height = gbt_res["height"].getInt<int>();
 		CMutableTransaction coinbase;
 		coinbase.version = 1;
-		// scriptSig: ONLY BIP34 height (special encoding for height <= 16)
+		// scriptSig: BIP34 height (following bitquantum-cli implementation)
 		CScript sig;
-		if (height <= 16) {
-			// For height <= 16, use OP_N encoding + OP_0 dummy (BIP34 rule)
-			sig << (height == 0 ? OP_0 : (opcodetype)(OP_1 + height - 1));
-			sig << OP_0; // dummy to make scriptSig size 2
-		} else {
-			// For height > 16, use CScriptNum encoding
-			sig << CScriptNum(height);
-		}
+		sig << CScriptNum(height);
 		coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
 		// Debug: print scriptSig
 		{
@@ -282,17 +275,7 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 			CScript payout = GetScriptForDestination(dest);
 			coinbase.vout.emplace_back(CTxOut(cb_value, payout));
 		}
-		// Only add witness if default_witness_commitment is provided (segwit blocks)
-		const UniValue commit = gbt_res.find_value("default_witness_commitment");
-		if (!commit.isNull() && commit.isStr()) {
-			coinbase.vin[0].scriptWitness.stack.resize(1);
-			coinbase.vin[0].scriptWitness.stack[0].assign(32, 0);
-			tfm::format(std::cout, "[CB] Added witness reserved value (segwit block)\n");
-			std::cout.flush();
-		} else {
-			tfm::format(std::cout, "[CB] No witness data (non-segwit block)\n");
-			std::cout.flush();
-		}
+		// Don't add witness data here - we'll add it later if we have witness commitment
 		block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 		built_local_coinbase = true;
 	}
@@ -309,30 +292,109 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 			block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
 		}
 	}
-	// If we built coinbase locally and default_witness_commitment is present, append OP_RETURN commitment
+	// Handle witness commitment if present (following bitquantum-cli logic exactly)
 	if (built_local_coinbase) {
-		const UniValue commit2 = gbt_res.find_value("default_witness_commitment");
-		if (!commit2.isNull() && commit2.isStr()) {
-			std::vector<unsigned char> default_commitment = ParseHex(commit2.get_str());
-			if (default_commitment.size() == 32) {
-		// OP_RETURN 0xaa21a9ed <32-byte commitment>
-		CScript opret;
-		opret << OP_RETURN;
-		std::vector<unsigned char> marker{0xaa,0x21,0xa9,0xed};
-		std::vector<unsigned char> payload;
-		payload.insert(payload.end(), marker.begin(), marker.end());
-		payload.insert(payload.end(), default_commitment.begin(), default_commitment.end());
-		opret << payload;
-		CMutableTransaction cb2;
-		cb2.version = block.vtx[0]->version;
-		cb2.vin = block.vtx[0]->vin;
-		cb2.vout = block.vtx[0]->vout;
-		cb2.nLockTime = block.vtx[0]->nLockTime;
-		cb2.vout.emplace_back(CTxOut(0, opret));
-		// preserve witness reserved value
-		cb2.vin[0].scriptWitness = block.vtx[0]->vin[0].scriptWitness;
-		block.vtx[0] = MakeTransactionRef(std::move(cb2));
+		const UniValue commit = gbt_res.find_value("default_witness_commitment");
+		bool has_witness_commitment = !commit.isNull() && !block.vtx.empty();
+		
+		// Check if any transaction has witness data
+		bool has_witness_data = false;
+		for (const auto& tx : block.vtx) {
+			for (const auto& vin : tx->vin) {
+				if (!vin.scriptWitness.IsNull()) {
+					has_witness_data = true;
+					break;
+				}
 			}
+			if (has_witness_data) break;
+		}
+		
+		if (has_witness_commitment) {
+			tfm::format(std::cout, "[CB] Found witness commitment, adding witness data\n");
+			std::cout.flush();
+			
+			// First, set witness reserved value for coinbase
+			CMutableTransaction coinbase_mtx;
+			coinbase_mtx.version = block.vtx[0]->version;
+			coinbase_mtx.vin = block.vtx[0]->vin;
+			coinbase_mtx.vout = block.vtx[0]->vout;
+			coinbase_mtx.nLockTime = block.vtx[0]->nLockTime;
+			
+			// Set witness reserved value for coinbase BEFORE calculating witness merkle root
+			if (!coinbase_mtx.vin.empty()) {
+				coinbase_mtx.vin[0].scriptWitness.stack.resize(1);
+				coinbase_mtx.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
+			}
+			
+			// Update block with coinbase that has witness data
+			block.vtx[0] = MakeTransactionRef(std::move(coinbase_mtx));
+			
+			// Now calculate witness merkle root with proper coinbase witness
+			uint256 witness_merkle_root = BlockWitnessMerkleRoot(block);
+			
+			// Create witness commitment according to BIP141
+			// The commitment is: SHA256(witness_merkle_root || witness_merkle_root)
+			uint256 commitment = Hash(witness_merkle_root, witness_merkle_root);
+			
+			// Create witness commitment output with proper BIP141 format
+			// Format: OP_RETURN <36-byte commitment>
+			// The commitment should be: 0x6a24aa21a9ed + 32-byte commitment
+			std::vector<unsigned char> commitment_data;
+			commitment_data.push_back(0x6a); // OP_RETURN
+			commitment_data.push_back(0x24); // 36 bytes
+			commitment_data.push_back(0xaa); // witness commitment marker
+			commitment_data.push_back(0x21); // 33 bytes  
+			commitment_data.push_back(0xa9); // witness commitment marker
+			commitment_data.push_back(0xed); // witness commitment marker
+			// Add the 32-byte commitment
+			commitment_data.insert(commitment_data.end(), commitment.begin(), commitment.end());
+			
+			CScript opret(commitment_data.begin(), commitment_data.end());
+			
+			// Add witness commitment to coinbase
+			CMutableTransaction final_coinbase_mtx;
+			final_coinbase_mtx.version = block.vtx[0]->version;
+			final_coinbase_mtx.vin = block.vtx[0]->vin;
+			final_coinbase_mtx.vout = block.vtx[0]->vout;
+			final_coinbase_mtx.nLockTime = block.vtx[0]->nLockTime;
+			
+			final_coinbase_mtx.vout.emplace_back(CTxOut(0, opret));
+			
+			// Keep witness data from previous step
+			if (!final_coinbase_mtx.vin.empty()) {
+				final_coinbase_mtx.vin[0].scriptWitness.stack.resize(1);
+				final_coinbase_mtx.vin[0].scriptWitness.stack[0].resize(32, 0); // 32 bytes of zeros
+			}
+			
+			block.vtx[0] = MakeTransactionRef(std::move(final_coinbase_mtx));
+		} else if (has_witness_data) {
+			// If there's witness data but no witness commitment, remove witness data
+			tfm::format(std::cout, "[CB] Found witness data but no witness commitment. Removing witness data.\n");
+			std::cout.flush();
+			
+			// Create new block without witness data
+			CBlock new_block;
+			new_block.nVersion = block.nVersion;
+			new_block.hashPrevBlock = block.hashPrevBlock;
+			new_block.hashMerkleRoot = block.hashMerkleRoot;
+			new_block.nTime = block.nTime;
+			new_block.nBits = block.nBits;
+			new_block.nNonce = block.nNonce;
+			
+			for (const auto& tx : block.vtx) {
+				CMutableTransaction mtx;
+				mtx.version = tx->version;
+				mtx.vin = tx->vin;
+				mtx.vout = tx->vout;
+				mtx.nLockTime = tx->nLockTime;
+				// Don't copy witness data
+				new_block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+			}
+			
+			block = new_block;
+		} else {
+			tfm::format(std::cout, "[CB] No witness commitment found (non-segwit block)\n");
+			std::cout.flush();
 		}
 	}
 	// Finalize merkle root
