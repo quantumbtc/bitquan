@@ -225,27 +225,25 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 		}
 		block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
 	} else {
-		// Build coinbase locally
+		// Build coinbase locally (ONLY BIP34 height; no coinbaseaux flags)
 		CAmount cb_value = 0;
 		if (!gbt_res["coinbasevalue"].isNull()) {
 			cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
 		}
-		int32_t height = 0;
-		if (!gbt_res["height"].isNull()) height = gbt_res["height"].getInt<int>();
+		if (gbt_res["height"].isNull()) throw std::runtime_error("GBT missing height for local coinbase");
+		int32_t height = gbt_res["height"].getInt<int>();
 		CMutableTransaction coinbase;
 		coinbase.version = 1;
-		// scriptSig: BIP34 height + coinbaseaux flags if provided
+		// scriptSig: ONLY BIP34 height
 		CScript sig;
 		sig << CScriptNum(height);
-		const UniValue aux = gbt_res.find_value("coinbaseaux");
-		if (aux.isObject()) {
-			const UniValue flags = aux.find_value("flags");
-			if (flags.isStr()) {
-				std::vector<unsigned char> flag_bytes = ParseHex(flags.get_str());
-				sig << flag_bytes;
-			}
-		}
 		coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
+		// Debug: print scriptSig
+		{
+			std::vector<unsigned char> ss(sig.begin(), sig.end());
+			tfm::format(std::cout, "[CB] height=%d scriptSig=%s\n", height, HexStr(ss).c_str());
+			std::cout.flush();
+		}
 		// payout
 		{
 			const std::string addr_str = gArgs.GetArg("-address", "");
