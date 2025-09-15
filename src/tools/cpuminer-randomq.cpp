@@ -282,11 +282,16 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 			CScript payout = GetScriptForDestination(dest);
 			coinbase.vout.emplace_back(CTxOut(cb_value, payout));
 		}
-		// Optional witness reserved if default commitment is provided
+		// Only add witness if default_witness_commitment is provided (segwit blocks)
 		const UniValue commit = gbt_res.find_value("default_witness_commitment");
 		if (!commit.isNull() && commit.isStr()) {
 			coinbase.vin[0].scriptWitness.stack.resize(1);
 			coinbase.vin[0].scriptWitness.stack[0].assign(32, 0);
+			tfm::format(std::cout, "[CB] Added witness reserved value (segwit block)\n");
+			std::cout.flush();
+		} else {
+			tfm::format(std::cout, "[CB] No witness data (non-segwit block)\n");
+			std::cout.flush();
 		}
 		block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 		built_local_coinbase = true;
