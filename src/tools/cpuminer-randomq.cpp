@@ -378,6 +378,27 @@ static void MinerLoop()
 		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules);
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
 		UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
+		// Debug: print getblocktemplate summary
+		{
+			const UniValue err0 = gbt.find_value("error");
+			const UniValue res0 = gbt.find_value("result");
+			if (!err0.isNull()) {
+				tfm::format(std::cout, "[GBT] error=%s\n", err0.write().c_str());
+			} else if (!res0.isNull()) {
+				bool has_hex = !res0.find_value("hex").isNull();
+				bool has_cbtx = !res0.find_value("coinbasetxn").isNull();
+				int hgt = res0.find_value("height").isNull() ? -1 : res0.find_value("height").getInt<int>();
+				std::string bits_s = res0.find_value("bits").isNull() ? "" : res0.find_value("bits").get_str();
+				unsigned txs_n = (unsigned)(res0.find_value("transactions").isArray() ? res0.find_value("transactions").size() : 0);
+				tfm::format(std::cout, "[GBT] height=%d bits=%s has_hex=%s has_coinbasetxn=%s txs=%u\n",
+					hgt,
+					bits_s.c_str(),
+					has_hex?"true":"false",
+					has_cbtx?"true":"false",
+					txs_n);
+				std::cout.flush();
+			}
+		}
 		const UniValue err = gbt.find_value("error");
 		if (!err.isNull()) {
 			throw std::runtime_error(err.write());
