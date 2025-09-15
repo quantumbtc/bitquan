@@ -18,6 +18,12 @@
 #include <key_io.h>
 #include <streams.h>
 #include <serialize.h>
+#ifdef WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -38,6 +44,23 @@ using namespace std::chrono_literals;
 
 // Provide translation function symbol expected by common/init.cpp link
 const TranslateFn G_TRANSLATION_FUN{nullptr};
+
+// CPU affinity binding
+static void SetThreadAffinity(int thread_id, int max_cores)
+{
+	if (max_cores <= 0) return;
+	int core = thread_id % max_cores;
+#ifdef WIN32
+	HANDLE hThread = GetCurrentThread();
+	DWORD_PTR mask = 1ULL << core;
+	SetThreadAffinityMask(hThread, mask);
+#else
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(core, &cpuset);
+	pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+#endif
+}
 
 static const char DEFAULT_RPCCONNECT[] = "127.0.0.1";
 static const int DEFAULT_HTTP_CLIENT_TIMEOUT = 900;
@@ -234,9 +257,16 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 		int32_t height = gbt_res["height"].getInt<int>();
 		CMutableTransaction coinbase;
 		coinbase.version = 1;
-		// scriptSig: ONLY BIP34 height (CScriptNum encoding as expected by node)
+		// scriptSig: ONLY BIP34 height (special encoding for height <= 16)
 		CScript sig;
-		sig << CScriptNum(height);
+		if (height <= 16) {
+			// For height <= 16, use OP_N encoding + OP_0 dummy (BIP34 rule)
+			sig << (height == 0 ? OP_0 : (opcodetype)(OP_1 + height - 1));
+			sig << OP_0; // dummy to make scriptSig size 2
+		} else {
+			// For height > 16, use CScriptNum encoding
+			sig << CScriptNum(height);
+		}
 		coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
 		// Debug: print scriptSig
 		{
@@ -352,7 +382,14 @@ static void MinerLoop()
 
 	const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
 	const unsigned int hw_threads = std::thread::hardware_concurrency();
-	const unsigned int threads = gArgs.GetIntArg("-threads", hw_threads ? hw_threads : 1);
+	const int max_cores = gArgs.GetIntArg("-cpucore", 0);
+	unsigned int threads = gArgs.GetIntArg("-threads", hw_threads ? hw_threads : 1);
+	// If -cpucore specified, limit threads to that number
+	if (max_cores > 0 && threads > (unsigned int)max_cores) {
+		threads = max_cores;
+		tfm::format(std::cout, "[Info] Limited threads to %u (cpucore=%d)\n", threads, max_cores);
+		std::cout.flush();
+	}
 
 	std::atomic<uint64_t> total_hashes{0};
 	std::atomic<uint64_t> window_hashes{0};
@@ -440,6 +477,11 @@ static void MinerLoop()
 		uint32_t start_nonce = block.nNonce;
 
 		auto worker = [&](uint32_t thread_id) {
+			// Set CPU affinity if -cpucore specified
+			const int max_cores = gArgs.GetIntArg("-cpucore", 0);
+			if (max_cores > 0) {
+				SetThreadAffinity(thread_id, max_cores);
+			}
 			CBlock local = block;
 			uint32_t nonce = start_nonce + thread_id;
 			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); ++i) {
