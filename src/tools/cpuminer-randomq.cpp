@@ -14,6 +14,7 @@
 #include <support/events.h>
 #include <core_io.h>
 #include <netbase.h>
+#include <streams.h>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -183,6 +184,14 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block)
 	return false;
 }
 
+static bool EncodeHexBlkLocal(const CBlock& block, std::string& out_hex)
+{
+	std::vector<unsigned char> data;
+	VectorWriter(data, 0, block);
+	out_hex = HexStr(data);
+	return true;
+}
+
 static void MinerLoop()
 {
 	const std::string payout = gArgs.GetArg("-address", "");
@@ -262,7 +271,7 @@ static void MinerLoop()
 		if (found.load()) {
 			// Submit
 			std::string hex;
-			if (!EncodeHexBlk(hex, block)) {
+			if (!EncodeHexBlkLocal(block, hex)) {
 				throw std::runtime_error("failed to encode block hex");
 			}
 			UniValue sub = RpcCallWait("submitblock", {hex});
