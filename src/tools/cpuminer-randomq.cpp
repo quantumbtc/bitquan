@@ -257,9 +257,16 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 		int32_t height = gbt_res["height"].getInt<int>();
 		CMutableTransaction coinbase;
 		coinbase.version = 1;
-		// scriptSig: BIP34 height (following bitquantum-cli implementation)
+		// scriptSig: BIP34 height (following BIP34 rules exactly)
 		CScript sig;
-		sig << CScriptNum(height);
+		if (height <= 16) {
+			// For height <= 16, use OP_N encoding + OP_0 dummy (BIP34 rule)
+			sig << (height == 0 ? OP_0 : (opcodetype)(OP_1 + height - 1));
+			sig << OP_0; // dummy to make scriptSig size 2
+		} else {
+			// For height > 16, use CScriptNum encoding
+			sig << CScriptNum(height);
+		}
 		coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
 		// Debug: print scriptSig
 		{
