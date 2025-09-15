@@ -386,6 +386,23 @@ static void MinerLoop()
 
 		block.hashMerkleRoot = BlockMerkleRoot(block);
 
+		// Print template/header info once per template fetch
+		{
+			int32_t height = res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>();
+			arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
+			tfm::format(std::cout,
+				"[Template] height=%d version=%d prev=%s time=%u bits=%08x target=%s txs=%u merkle=%s\n",
+				height,
+				block.nVersion,
+				block.hashPrevBlock.GetHex().c_str(),
+				(unsigned)block.nTime,
+				(unsigned)block.nBits,
+				target.GetHex().c_str(),
+				(unsigned)block.vtx.size(),
+				block.hashMerkleRoot.GetHex().c_str());
+			std::cout.flush();
+		}
+
 		std::atomic<bool> found{false};
 		std::mutex found_mu;
 		uint32_t start_nonce = block.nNonce;
@@ -416,6 +433,21 @@ static void MinerLoop()
 		for (auto& th : miners) th.join();
 
 		if (found.load()) {
+			// Print found header info
+			{
+				const uint256 powhash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+				arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
+				tfm::format(std::cout,
+					"[Found] height=%d nonce=%u time=%u bits=%08x target=%s powhash=%s merkle=%s\n",
+					res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>(),
+					(unsigned)block.nNonce,
+					(unsigned)block.nTime,
+					(unsigned)block.nBits,
+					target.GetHex().c_str(),
+					powhash.GetHex().c_str(),
+					block.hashMerkleRoot.GetHex().c_str());
+				std::cout.flush();
+			}
 			// Submit by patching nonce bytes in template hex or full-encode locally
 			std::string sub_hex;
 			if (!tmpl_hex.empty()) {
@@ -425,6 +457,19 @@ static void MinerLoop()
 			}
 			UniValue sub = RpcCallWait("submitblock", {sub_hex});
 			( void )sub;
+			// Print tip info after submit
+			try {
+				const UniValue bci = RpcCallWait("getblockchaininfo", {});
+				const UniValue err2 = bci.find_value("error");
+				if (err2.isNull()) {
+					const UniValue res2 = bci.find_value("result");
+					if (!res2.isNull() && !res2.find_value("blocks").isNull()) {
+						int tip = res2.find_value("blocks").getInt<int>();
+						tfm::format(std::cout, "[Submit] tip_height=%d\n", tip);
+						std::cout.flush();
+					}
+				}
+			} catch (...) {}
 		} else {
 			// refresh template
 		}
