@@ -319,9 +319,8 @@ static void MinerLoop()
 
 	try {
 		while (!g_stop.load()) {
-		// getblocktemplate with rules
-		std::string rules = "{\"rules\":[\"segwit\"]}";
-		UniValue gbt = RpcCallWait("getblocktemplate", {rules});
+		// getblocktemplate (no params; use node defaults)
+		UniValue gbt = RpcCallWait("getblocktemplate", {});
 		const UniValue err = gbt.find_value("error");
 		if (!err.isNull()) {
 			throw std::runtime_error(err.write());
