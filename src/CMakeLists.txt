@@ -370,6 +370,21 @@ if(BUILD_CLI)
   install_binary_component(bitquantum-cli HAS_MANPAGE)
 endif()
 
+# Standalone RandomQ CPU miner (client-side via RPC)
+add_executable(cpuminer-randomq
+  tools/cpuminer-randomq.cpp
+)
+target_link_libraries(cpuminer-randomq
+  PRIVATE
+    core_interface
+    bitquantum_cli
+    bitquantum_common
+    bitquantum_util
+    libevent::core
+    libevent::extra
+)
+install_binary_component(cpuminer-randomq)
+
 
 if(BUILD_TX)
   add_executable(bitquantum-tx bitquantum-tx.cpp)
