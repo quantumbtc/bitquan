@@ -214,51 +214,55 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 	if (!gbt_res["bits"].isNull()) block.nBits = (uint32_t)std::stoul(gbt_res["bits"].get_str(), nullptr, 16);
 	block.nNonce = 0;
 	
-	// Coinbase
-	CAmount cb_value = 0;
-	if (!gbt_res["coinbasevalue"].isNull()) {
-		cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
-	}
-	int32_t height = 0;
-	if (!gbt_res["height"].isNull()) height = gbt_res["height"].getInt<int>();
-	CMutableTransaction coinbase;
-	coinbase.version = 1;
-	// scriptSig: BIP34 height + coinbaseaux flags if provided
-	CScript sig;
-	sig << CScriptNum(height);
-	const UniValue aux = gbt_res.find_value("coinbaseaux");
-	if (aux.isObject()) {
-		const UniValue flags = aux.find_value("flags");
-		if (flags.isStr()) {
-			std::vector<unsigned char> flag_bytes = ParseHex(flags.get_str());
-			sig << flag_bytes;
+	// Coinbase: prefer server-provided coinbasetxn if available
+	block.vtx.clear();
+	bool built_local_coinbase = false;
+	const UniValue coinbasetxn = gbt_res.find_value("coinbasetxn");
+	if (coinbasetxn.isObject() && coinbasetxn.exists("data") && coinbasetxn.find_value("data").isStr()) {
+		CMutableTransaction mtx;
+		if (!DecodeHexTx(mtx, coinbasetxn.find_value("data").get_str())) {
+			throw std::runtime_error("failed to decode coinbase txn from template");
 		}
-	}
-	coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
-	// payout
-	{
-		const std::string addr_str = gArgs.GetArg("-address", "");
-		CTxDestination dest = DecodeDestination(addr_str);
-		if (!IsValidDestination(dest)) throw std::runtime_error("invalid mining address for coinbase");
-		CScript payout = GetScriptForDestination(dest);
-		coinbase.vout.emplace_back(CTxOut(cb_value, payout));
-	}
-	// Witness handling
-	bool add_commitment = false;
-	std::vector<unsigned char> default_commitment;
-	{
+		block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+	} else {
+		// Build coinbase locally
+		CAmount cb_value = 0;
+		if (!gbt_res["coinbasevalue"].isNull()) {
+			cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
+		}
+		int32_t height = 0;
+		if (!gbt_res["height"].isNull()) height = gbt_res["height"].getInt<int>();
+		CMutableTransaction coinbase;
+		coinbase.version = 1;
+		// scriptSig: BIP34 height + coinbaseaux flags if provided
+		CScript sig;
+		sig << CScriptNum(height);
+		const UniValue aux = gbt_res.find_value("coinbaseaux");
+		if (aux.isObject()) {
+			const UniValue flags = aux.find_value("flags");
+			if (flags.isStr()) {
+				std::vector<unsigned char> flag_bytes = ParseHex(flags.get_str());
+				sig << flag_bytes;
+			}
+		}
+		coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
+		// payout
+		{
+			const std::string addr_str = gArgs.GetArg("-address", "");
+			CTxDestination dest = DecodeDestination(addr_str);
+			if (!IsValidDestination(dest)) throw std::runtime_error("invalid mining address for coinbase");
+			CScript payout = GetScriptForDestination(dest);
+			coinbase.vout.emplace_back(CTxOut(cb_value, payout));
+		}
+		// Optional witness reserved if default commitment is provided
 		const UniValue commit = gbt_res.find_value("default_witness_commitment");
 		if (!commit.isNull() && commit.isStr()) {
-			default_commitment = ParseHex(commit.get_str());
-			add_commitment = (default_commitment.size() == 32);
+			coinbase.vin[0].scriptWitness.stack.resize(1);
+			coinbase.vin[0].scriptWitness.stack[0].assign(32, 0);
 		}
+		block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
+		built_local_coinbase = true;
 	}
-	if (add_commitment) {
-		coinbase.vin[0].scriptWitness.stack.resize(1);
-		coinbase.vin[0].scriptWitness.stack[0].assign(32, 0);
-	}
-	block.vtx.clear();
-	block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 	// other transactions
 	const UniValue txs = gbt_res.find_value("transactions");
 	if (txs.isArray()) {
@@ -272,8 +276,12 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 			block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
 		}
 	}
-	// Add witness commitment output if required
-	if (add_commitment) {
+	// If we built coinbase locally and default_witness_commitment is present, append OP_RETURN commitment
+	if (built_local_coinbase) {
+		const UniValue commit2 = gbt_res.find_value("default_witness_commitment");
+		if (!commit2.isNull() && commit2.isStr()) {
+			std::vector<unsigned char> default_commitment = ParseHex(commit2.get_str());
+			if (default_commitment.size() == 32) {
 		// OP_RETURN 0xaa21a9ed <32-byte commitment>
 		CScript opret;
 		opret << OP_RETURN;
@@ -291,6 +299,8 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 		// preserve witness reserved value
 		cb2.vin[0].scriptWitness = block.vtx[0]->vin[0].scriptWitness;
 		block.vtx[0] = MakeTransactionRef(std::move(cb2));
+			}
+		}
 	}
 	// Finalize merkle root
 	block.hashMerkleRoot = BlockMerkleRoot(block);
