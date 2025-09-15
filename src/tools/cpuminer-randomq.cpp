@@ -5,6 +5,7 @@
 #include <util/check.h>
 #include <util/strencodings.h>
 #include <util/time.h>
+#include <util/translation.h>
 #include <rpc/request.h>
 #include <univalue.h>
 #include <crypto/randomq_mining.h>
@@ -32,6 +33,9 @@
 #include <vector>
 
 using namespace std::chrono_literals;
+
+// Provide translation function symbol expected by common/init.cpp link
+const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 static const char DEFAULT_RPCCONNECT[] = "127.0.0.1";
 static const int DEFAULT_HTTP_CLIENT_TIMEOUT = 900;
