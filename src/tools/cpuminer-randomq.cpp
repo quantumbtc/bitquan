@@ -14,7 +14,7 @@
 #include <support/events.h>
 #include <core_io.h>
 #include <netbase.h>
-#include <streams.h>
+#include <key_io.h>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -168,28 +168,123 @@ static UniValue RpcCallWait(const std::string& method, const std::vector<std::st
 
 } // namespace
 
-static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block)
+static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::string& tmpl_hex_out)
 {
 	const UniValue hexv = gbt_res.find_value("hex");
 	if (!hexv.isNull()) {
-		const std::string hex = hexv.get_str();
-		return DecodeHexBlk(block, hex);
+		tmpl_hex_out = hexv.get_str();
+		return DecodeHexBlk(block, tmpl_hex_out);
 	}
+	// Header
 	if (!gbt_res["version"].isNull()) block.nVersion = gbt_res["version"].getInt<int>();
 	if (!gbt_res["previousblockhash"].isNull()) block.hashPrevBlock = uint256::FromHex(gbt_res["previousblockhash"].get_str()).value_or(uint256{});
 	if (!gbt_res["curtime"].isNull()) block.nTime = gbt_res["curtime"].getInt<int>();
 	if (!gbt_res["bits"].isNull()) block.nBits = (uint32_t)std::stoul(gbt_res["bits"].get_str(), nullptr, 16);
 	block.nNonce = 0;
-	// Coinbase and transactions omitted in hex-less path; require hex for simplicity
-	return false;
+	
+	// Coinbase
+	CAmount cb_value = 0;
+	if (!gbt_res["coinbasevalue"].isNull()) {
+		cb_value = gbt_res["coinbasevalue"].getInt<int64_t>();
+	}
+	int32_t height = 0;
+	if (!gbt_res["height"].isNull()) height = gbt_res["height"].getInt<int>();
+	CMutableTransaction coinbase;
+	coinbase.version = 1;
+	// scriptSig: BIP34 height + coinbaseaux flags if provided
+	CScript sig;
+	sig << CScriptNum(height);
+	const UniValue aux = gbt_res.find_value("coinbaseaux");
+	if (aux.isObject()) {
+		const UniValue flags = aux.find_value("flags");
+		if (flags.isStr()) {
+			std::vector<unsigned char> flag_bytes = ParseHex(flags.get_str());
+			sig << flag_bytes;
+		}
+	}
+	coinbase.vin.emplace_back(CTxIn(COutPoint(), sig));
+	// payout
+	{
+		const std::string addr_str = gArgs.GetArg("-address", "");
+		CTxDestination dest = DecodeDestination(addr_str);
+		if (!IsValidDestination(dest)) throw std::runtime_error("invalid mining address for coinbase");
+		CScript payout = GetScriptForDestination(dest);
+		coinbase.vout.emplace_back(CTxOut(cb_value, payout));
+	}
+	// Witness handling
+	bool add_commitment = false;
+	std::vector<unsigned char> default_commitment;
+	{
+		const UniValue commit = gbt_res.find_value("default_witness_commitment");
+		if (!commit.isNull() && commit.isStr()) {
+			default_commitment = ParseHex(commit.get_str());
+			add_commitment = (default_commitment.size() == 32);
+		}
+	}
+	if (add_commitment) {
+		coinbase.vin[0].scriptWitness.stack.resize(1);
+		coinbase.vin[0].scriptWitness.stack[0].assign(32, 0);
+	}
+	block.vtx.clear();
+	block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
+	// other transactions
+	const UniValue txs = gbt_res.find_value("transactions");
+	if (txs.isArray()) {
+		for (size_t i = 0; i < txs.size(); ++i) {
+			const UniValue& txo = txs[i];
+			if (!txo.isObject()) continue;
+			const UniValue data = txo.find_value("data");
+			if (!data.isStr()) continue;
+			CMutableTransaction mtx;
+			if (!DecodeHexTx(mtx, data.get_str())) throw std::runtime_error("failed to decode tx from template");
+			block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+		}
+	}
+	// Add witness commitment output if required
+	if (add_commitment) {
+		// OP_RETURN 0xaa21a9ed <32-byte commitment>
+		CScript opret;
+		opret << OP_RETURN;
+		std::vector<unsigned char> marker{0xaa,0x21,0xa9,0xed};
+		std::vector<unsigned char> payload;
+		payload.insert(payload.end(), marker.begin(), marker.end());
+		payload.insert(payload.end(), default_commitment.begin(), default_commitment.end());
+		opret << payload;
+		CMutableTransaction cb2;
+		cb2.version = block.vtx[0]->version;
+		cb2.vin = block.vtx[0]->vin;
+		cb2.vout = block.vtx[0]->vout;
+		cb2.nLockTime = block.vtx[0]->nLockTime;
+		cb2.vout.emplace_back(CTxOut(0, opret));
+		// preserve witness reserved value
+		cb2.vin[0].scriptWitness = block.vtx[0]->vin[0].scriptWitness;
+		block.vtx[0] = MakeTransactionRef(std::move(cb2));
+	}
+	// Finalize merkle root
+	block.hashMerkleRoot = BlockMerkleRoot(block);
+	return true;
 }
 
-static bool EncodeHexBlkLocal(const CBlock& block, std::string& out_hex)
+static std::string UpdateNonceInBlockHex(const std::string& tmpl_hex, uint32_t nonce)
 {
-	std::vector<unsigned char> data;
-	VectorWriter(data, 0, block);
-	out_hex = HexStr(data);
-	return true;
+	// Block header is 80 bytes; nonce at bytes 76..79 (little-endian)
+	if (tmpl_hex.size() < 160) throw std::runtime_error("template hex too short");
+	std::string out = tmpl_hex;
+	const size_t off = 76 * 2; // hex chars offset
+	unsigned char b0 = (unsigned char)(nonce & 0xFF);
+	unsigned char b1 = (unsigned char)((nonce >> 8) & 0xFF);
+	unsigned char b2 = (unsigned char)((nonce >> 16) & 0xFF);
+	unsigned char b3 = (unsigned char)((nonce >> 24) & 0xFF);
+	auto write_byte = [&](size_t pos, unsigned char b){
+		static const char* hexd = "0123456789abcdef";
+		out[pos+0] = hexd[(b >> 4) & 0xF];
+		out[pos+1] = hexd[b & 0xF];
+	};
+	write_byte(off + 0, b0);
+	write_byte(off + 2, b1);
+	write_byte(off + 4, b2);
+	write_byte(off + 6, b3);
+	return out;
 }
 
 static void MinerLoop()
@@ -230,7 +325,8 @@ static void MinerLoop()
 		if (res.isNull()) throw std::runtime_error("GBT returned null");
 
 		CBlock block;
-		if (!BuildBlockFromGBT(res, block)) {
+		std::string tmpl_hex;
+		if (!BuildBlockFromGBT(res, block, tmpl_hex)) {
 			// Fall back to generatetoaddress path for simplicity (server mines)
 			UniValue reply = RpcCallWait("generatetoaddress", {"1", payout, std::to_string(maxtries)});
 			( void )reply;
@@ -269,12 +365,9 @@ static void MinerLoop()
 		for (auto& th : miners) th.join();
 
 		if (found.load()) {
-			// Submit
-			std::string hex;
-			if (!EncodeHexBlkLocal(block, hex)) {
-				throw std::runtime_error("failed to encode block hex");
-			}
-			UniValue sub = RpcCallWait("submitblock", {hex});
+			// Submit by patching nonce bytes in template hex
+			const std::string sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
+			UniValue sub = RpcCallWait("submitblock", {sub_hex});
 			( void )sub;
 		} else {
 			// refresh template
