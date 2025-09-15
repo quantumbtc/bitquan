@@ -446,10 +446,21 @@ static RPCHelpMan generatetoaddress()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    // Node-side mining is disabled. Direct users to CLI client-mining via RPC.
-    throw JSONRPCError(RPC_MISC_ERROR,
-        "Node mining disabled. Use CLI client mining: 'bitquantum-cli -generate loop -clientmine'\n"
-        "CLI will use getblocktemplate/submitblock over RPC.");
+    const auto nblocks{self.Arg<int>("nblocks")};
+    const auto max_tries{self.Arg<uint64_t>("maxtries")};
+    const auto address{self.Arg<std::string>("address")};
+
+    CScript coinbase_output_script;
+    std::string error;
+    if (!getScriptFromAddress(address, coinbase_output_script, error)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
+    }
+
+    NodeContext& node = EnsureAnyNodeContext(request.context);
+    Mining& miner = EnsureMining(node);
+    ChainstateManager& chainman = EnsureChainman(node);
+
+    return generateBlocks(chainman, miner, coinbase_output_script, nblocks, max_tries);
 },
     };
 }
