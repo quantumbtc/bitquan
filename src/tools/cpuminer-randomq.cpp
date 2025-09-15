@@ -1,5 +1,6 @@
 #include <common/args.h>
 #include <common/system.h>
+#include <common/init.h>
 #include <logging.h>
 #include <util/check.h>
 #include <util/strencodings.h>
@@ -10,7 +11,11 @@
 #include <primitives/block.h>
 #include <consensus/merkle.h>
 #include <chainparamsbase.h>
+#include <support/events.h>
+#include <core_io.h>
+#include <netbase.h>
 
+#include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/http.h>
 
@@ -105,18 +110,15 @@ static UniValue RpcCall(const std::string& method, const std::vector<std::string
 		port = rpcconnect_port;
 	}
 
-	raiseevthread_use_pthreads();
-	raii_event_base base = obtain_event_base();
-	if (!base) throw std::runtime_error("Failed to create event base");
-
-	raii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
-	if (!evcon) throw std::runtime_error("create connection failed");
+	// Obtain event base and connection
+	ra ii_event_base base = obtain_event_base();
+	ra ii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
 
 	const int timeout = gArgs.GetIntArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT);
 	if (timeout > 0) evhttp_connection_set_timeout(evcon.get(), timeout);
 
 	HTTPReply response;
-	raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
+	ra ii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
 	if (!req) throw std::runtime_error("create http request failed");
 
 	std::string auth = GetAuth();
@@ -126,14 +128,17 @@ static UniValue RpcCall(const std::string& method, const std::vector<std::string
 	evhttp_add_header(headers, "Content-Type", "application/json");
 	evhttp_add_header(headers, "Authorization", (std::string("Basic ") + EncodeBase64(auth)).c_str());
 
-	JSONRPCRequest jreq;
-	jreq.strMethod = method;
-	for (const auto& p : params) jreq.params.push_back(p);
-	UniValue body = JSONRPCRequestObj(jreq.strMethod, jreq.params, jreq.id);
+	UniValue params_arr(UniValue::VARR);
+	for (const auto& p : params) params_arr.push_back(p);
+	UniValue id(1);
+	UniValue body = JSONRPCRequestObj(method, params_arr, id);
 	std::string body_str = body.write() + "\n";
 	struct evbuffer* out = evhttp_request_get_output_buffer(req.get());
 	evbuffer_add(out, body_str.data(), body_str.size());
-	evhttp_make_request(evcon.get(), req.get(), EVHTTP_REQ_POST, "/");
+
+	int r = evhttp_make_request(evcon.get(), req.get(), EVHTTP_REQ_POST, "/");
+	req.release();
+	if (r != 0) throw std::runtime_error("send http request failed");
 	event_base_dispatch(base.get());
 
 	if (response.status == 0) throw std::runtime_error("RPC connection failed");
@@ -237,7 +242,8 @@ static void MinerLoop()
 				const uint256 h = RandomQMining::CalculateRandomQHashOptimized(local, local.nNonce);
 				window_hashes.fetch_add(1, std::memory_order_relaxed);
 				total_hashes.fetch_add(1, std::memory_order_relaxed);
-				if (UintToArith256(h) <= arith_uint256().SetCompact(local.nBits)) {
+				arith_uint256 target; bool neg=false, of=false; target.SetCompact(local.nBits, &neg, &of);
+				if (!neg && !of && target != 0 && UintToArith256(h) <= target) {
 					std::lock_guard<std::mutex> l(found_mu);
 					if (!found.exchange(true)) {
 						block.nNonce = local.nNonce;
@@ -287,9 +293,9 @@ int main(int argc, char* argv[])
 			if (error != "") tfm::format(std::cerr, "Error parsing command line: %s\n", error);
 			return EXIT_FAILURE;
 		}
-		SelectBaseParams(gArgs);
+		SelectBaseParams(gArgs.GetChainType());
 		if (auto cfgerr = common::InitConfig(gArgs, nullptr)) {
-			( void )cfgerr; // ignore config file for standalone
+			// ignore config failure for standalone mode
 		}
 		std::signal(SIGINT, [](int){ g_stop.store(true); });
 #ifdef SIGTERM
