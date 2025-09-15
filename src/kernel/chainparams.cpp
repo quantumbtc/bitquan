@@ -93,7 +93,7 @@ class CMainParams : public CChainParams {
 public:
     CMainParams() {
         m_chain_type = ChainType::MAIN;
-        
+        consensus.strNetworkID = "bitquantum";
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
@@ -144,7 +144,7 @@ public:
         m_assumed_chain_state_size = 14;
 
         vSeeds.clear();
-        vFixedSeeds.clear();
+        fixedSeeds.clear();
 
         // Create genesis with nonce 0, then find a valid nonce using RandomQ
         genesis = CreateGenesisBlock(1756857263, 1379716, 0x1e0ffff0, 1, 50 * COIN);
