@@ -16,6 +16,8 @@
 #include <core_io.h>
 #include <netbase.h>
 #include <key_io.h>
+#include <streams.h>
+#include <serialize.h>
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -98,7 +100,7 @@ static std::string GetAuth()
 	return userpass;
 }
 
-static UniValue RpcCall(const std::string& method, const std::vector<std::string>& params)
+static UniValue DoRpcRequest(const std::string& method, const UniValue& params_arr)
 {
 	std::string host;
 	uint16_t port{BaseParams().RPCPort()};
@@ -115,15 +117,14 @@ static UniValue RpcCall(const std::string& method, const std::vector<std::string
 		port = rpcconnect_port;
 	}
 
-	// Obtain event base and connection
-	raii_event_base base = obtain_event_base();
-	raii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
+	ra ii_event_base base = obtain_event_base();
+	ra ii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
 
 	const int timeout = gArgs.GetIntArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT);
 	if (timeout > 0) evhttp_connection_set_timeout(evcon.get(), timeout);
 
 	HTTPReply response;
-	raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
+	ra ii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
 	if (!req) throw std::runtime_error("create http request failed");
 
 	std::string auth = GetAuth();
@@ -133,10 +134,7 @@ static UniValue RpcCall(const std::string& method, const std::vector<std::string
 	evhttp_add_header(headers, "Content-Type", "application/json");
 	evhttp_add_header(headers, "Authorization", (std::string("Basic ") + EncodeBase64(auth)).c_str());
 
-	UniValue params_arr(UniValue::VARR);
-	for (const auto& p : params) params_arr.push_back(p);
-	UniValue id(1);
-	UniValue body = JSONRPCRequestObj(method, params_arr, id);
+	UniValue body = JSONRPCRequestObj(method, params_arr, UniValue(1));
 	std::string body_str = body.write() + "\n";
 	struct evbuffer* out = evhttp_request_get_output_buffer(req.get());
 	evbuffer_add(out, body_str.data(), body_str.size());
@@ -152,6 +150,18 @@ static UniValue RpcCall(const std::string& method, const std::vector<std::string
 	return reply;
 }
 
+static UniValue RpcCall(const std::string& method, const std::vector<std::string>& params)
+{
+	UniValue arr(UniValue::VARR);
+	for (const auto& p : params) arr.push_back(p);
+	return DoRpcRequest(method, arr);
+}
+
+static UniValue RpcCallParams(const std::string& method, const UniValue& params_arr)
+{
+	return DoRpcRequest(method, params_arr);
+}
+
 static UniValue RpcCallWait(const std::string& method, const std::vector<std::string>& params)
 {
 	const bool fWait = gArgs.GetBoolArg("-rpcwait", false);
@@ -160,6 +170,24 @@ static UniValue RpcCallWait(const std::string& method, const std::vector<std::st
 	while (true) {
 		try {
 			return RpcCall(method, params);
+		} catch (...) {
+			if (!fWait) throw;
+			if (timeout > 0 && std::chrono::steady_clock::now() >= deadline) {
+				throw std::runtime_error("timeout waiting for RPC server");
+			}
+			UninterruptibleSleep(1s);
+		}
+	}
+}
+
+static UniValue RpcCallWaitParams(const std::string& method, const UniValue& params_arr)
+{
+	const bool fWait = gArgs.GetBoolArg("-rpcwait", false);
+	const int timeout = gArgs.GetIntArg("-rpcwaittimeout", 0);
+	auto deadline = std::chrono::steady_clock::now() + 1s * timeout;
+	while (true) {
+		try {
+			return RpcCallParams(method, params_arr);
 		} catch (...) {
 			if (!fWait) throw;
 			if (timeout > 0 && std::chrono::steady_clock::now() >= deadline) {
@@ -291,6 +319,22 @@ static std::string UpdateNonceInBlockHex(const std::string& tmpl_hex, uint32_t n
 	return out;
 }
 
+static std::string BuildFullBlockHex(const CBlock& block)
+{
+	// Serialize header
+	std::vector<unsigned char> bytes;
+	VectorWriter(bytes, 0, static_cast<const CBlockHeader&>(block));
+	// Varint count
+	WriteCompactSize(bytes, block.vtx.size());
+	// Append each tx bytes from hex encoding
+	for (const auto& txref : block.vtx) {
+		const std::string tx_hex = EncodeHexTx(*txref);
+		std::vector<unsigned char> tx_bytes = ParseHex(tx_hex);
+		bytes.insert(bytes.end(), tx_bytes.begin(), tx_bytes.end());
+	}
+	return HexStr(bytes);
+}
+
 static void MinerLoop()
 {
 	const std::string payout = gArgs.GetArg("-address", "");
@@ -319,8 +363,11 @@ static void MinerLoop()
 
 	try {
 		while (!g_stop.load()) {
-		// getblocktemplate (no params; use node defaults)
-		UniValue gbt = RpcCallWait("getblocktemplate", {});
+		// getblocktemplate (object param with rules)
+		UniValue rules(UniValue::VARR); rules.push_back("segwit");
+		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules);
+		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
+		UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
 		const UniValue err = gbt.find_value("error");
 		if (!err.isNull()) {
 			throw std::runtime_error(err.write());
@@ -370,7 +417,12 @@ static void MinerLoop()
 
 		if (found.load()) {
 			// Submit by patching nonce bytes in template hex
-			const std::string sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
+			std::string sub_hex;
+			if (!tmpl_hex.empty()) {
+				sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
+			} else {
+				sub_hex = BuildFullBlockHex(block);
+			}
 			UniValue sub = RpcCallWait("submitblock", {sub_hex});
 			( void )sub;
 		} else {
