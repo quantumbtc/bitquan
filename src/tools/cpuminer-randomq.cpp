@@ -317,7 +317,8 @@ static void MinerLoop()
 		}
 	});
 
-	while (!g_stop.load()) {
+	try {
+		while (!g_stop.load()) {
 		// getblocktemplate with rules
 		std::string rules = "{\"rules\":[\"segwit\"]}";
 		UniValue gbt = RpcCallWait("getblocktemplate", {rules});
@@ -376,6 +377,10 @@ static void MinerLoop()
 		} else {
 			// refresh template
 		}
+		}
+	} catch (const std::exception& e) {
+		g_stop.store(true);
+		tfm::format(std::cerr, "mining loop error: %s\n", e.what());
 	}
 
 	reporter.join();
