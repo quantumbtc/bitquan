@@ -46,6 +46,10 @@
 #include <fstream>
 
 #ifdef OPENCL_FOUND
+// Target OpenCL 2.0 APIs when available
+#ifndef CL_TARGET_OPENCL_VERSION
+#define CL_TARGET_OPENCL_VERSION 200
+#endif
 #include <CL/cl.h>
 #endif
 
@@ -90,8 +94,13 @@ namespace OpenCLMining {
         context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
         if (err != CL_SUCCESS) return false;
         
-        // Create command queue
+        // Create command queue (prefer OpenCL 2.0 API)
+#if defined(CL_VERSION_2_0)
+        const cl_queue_properties props[] = {0};
+        queue = clCreateCommandQueueWithProperties(context, device, props, &err);
+#else
         queue = clCreateCommandQueue(context, device, 0, &err);
+#endif
         if (err != CL_SUCCESS) return false;
         
         // Create buffers
