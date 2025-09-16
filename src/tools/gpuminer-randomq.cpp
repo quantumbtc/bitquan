@@ -22,6 +22,7 @@
 #include <key_io.h>
 #include <streams.h>
 #include <serialize.h>
+#include <uint256.h>
 
 #ifdef WIN32
 #include <windows.h>
@@ -355,7 +356,8 @@ static UniValue DoRpcRequest(const std::string& strMethod, const UniValue& param
 	
 	raii_event_base base = obtain_event_base();
 	raii_evhttp_connection conn = obtain_evhttp_connection_base(base.get(), host.c_str(), port);
-	raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&reply);
+	HTTPReply http_reply;
+	raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&http_reply);
 	
 	if (req == nullptr) throw std::runtime_error("create http request failed");
 	
@@ -370,10 +372,16 @@ static UniValue DoRpcRequest(const std::string& strMethod, const UniValue& param
 	assert(output_buffer != nullptr);
 	evbuffer_add(output_buffer, strRequest.data(), strRequest.size());
 	
-	const char* rpcuser_c = rpcuser.empty() ? nullptr : rpcuser.c_str();
-	const char* rpcpassword_c = rpcpassword.empty() ? nullptr : rpcpassword.c_str();
-	if (rpcuser_c && rpcpassword_c) {
-		evhttp_add_header(output_headers, "Authorization", (std::string("Basic ") + EncodeBase64(rpcuser_c + std::string(":") + rpcpassword_c)).c_str());
+	// Authorization: prefer explicit user/pass, fallback to cookie
+	std::string auth_pair;
+	if (!rpcuser.empty() && !rpcpassword.empty()) {
+		auth_pair = rpcuser + ":" + rpcpassword;
+	} else {
+		auth_pair = GetAuth();
+	}
+	if (!auth_pair.empty()) {
+		std::string auth_header = std::string("Basic ") + EncodeBase64(auth_pair);
+		evhttp_add_header(output_headers, "Authorization", auth_header.c_str());
 	}
 	
 	int r = evhttp_make_request(conn.get(), req.get(), EVHTTP_REQ_POST, path.c_str());
@@ -382,17 +390,17 @@ static UniValue DoRpcRequest(const std::string& strMethod, const UniValue& param
 	
 	event_base_dispatch(base.get());
 	
-	if (reply.status == 0) throw std::runtime_error("couldn't connect to server");
-	else if (reply.status == HTTP_UNAUTHORIZED) throw std::runtime_error("incorrect rpcuser or rpcpassword");
-	else if (reply.status >= 400 && reply.status != HTTP_BAD_REQUEST && reply.status != HTTP_NOT_FOUND && reply.status != HTTP_INTERNAL_SERVER_ERROR) throw std::runtime_error(strprintf("server returned HTTP error %d", reply.status));
-	else if (reply.body.empty()) throw std::runtime_error("no response from server");
+	if (http_reply.status == 0) throw std::runtime_error("couldn't connect to server");
+	else if (http_reply.status == HTTP_UNAUTHORIZED) throw std::runtime_error("incorrect rpcuser or rpcpassword");
+	else if (http_reply.status >= 400 && http_reply.status != HTTP_BADREQUEST && http_reply.status != HTTP_NOTFOUND && http_reply.status != HTTP_INTERNAL) throw std::runtime_error(strprintf("server returned HTTP error %d", http_reply.status));
+	else if (http_reply.body.empty()) throw std::runtime_error("no response from server");
 	
 	UniValue valReply(UniValue::VSTR);
-	if (!valReply.read(reply.body)) throw std::runtime_error("couldn't parse reply from server");
-	const UniValue& reply = valReply.get_obj();
-	if (reply.empty()) throw std::runtime_error("expected reply to have result, error and id properties");
+	if (!valReply.read(http_reply.body)) throw std::runtime_error("couldn't parse reply from server");
+	const UniValue& reply_obj = valReply.get_obj();
+	if (reply_obj.empty()) throw std::runtime_error("expected reply to have result, error and id properties");
 	
-	return reply;
+	return reply_obj;
 }
 
 static UniValue RpcCall(const std::string& strMethod, const std::vector<std::string>& params)
@@ -411,7 +419,7 @@ static UniValue RpcCallWait(const std::string& strMethod, const std::vector<std:
 	
 	if (timeout <= 0) timeout = DEFAULT_HTTP_CLIENT_TIMEOUT;
 	
-	reply = RpcCall(strMethod, params);
+	reply = DoRpcRequest(strMethod, params);
 	return reply;
 }
 
