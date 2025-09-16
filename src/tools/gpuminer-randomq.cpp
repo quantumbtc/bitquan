@@ -453,9 +453,9 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 	// Build block from template fields
 	block.nVersion = gbt_res["version"].getInt<int>();
 	{
-		uint256 prev;
-		prev.SetHex(gbt_res["previousblockhash"].get_str());
-		block.hashPrevBlock = prev;
+		auto prev_opt = uint256::FromHex(gbt_res["previousblockhash"].get_str());
+		if (!prev_opt) throw std::runtime_error("invalid previousblockhash hex");
+		block.hashPrevBlock = *prev_opt;
 	}
 	block.nTime = gbt_res["curtime"].getInt<uint32_t>();
 	block.nBits = strtoul(gbt_res["bits"].get_str().c_str(), nullptr, 16);
