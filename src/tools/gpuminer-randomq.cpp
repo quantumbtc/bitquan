@@ -23,7 +23,6 @@
 #include <streams.h>
 #include <serialize.h>
 #include <uint256.h>
-#include <rpc/protocol.h>
 
 #ifdef WIN32
 #include <windows.h>
@@ -391,9 +390,10 @@ static UniValue DoRpcRequest(const std::string& strMethod, const UniValue& param
 	
 	event_base_dispatch(base.get());
 	
+	// Use numeric codes to avoid macro conflicts between libevent and internal headers
 	if (http_reply.status == 0) throw std::runtime_error("couldn't connect to server");
-	else if (http_reply.status == HTTP_UNAUTHORIZED) throw std::runtime_error("incorrect rpcuser or rpcpassword");
-	else if (http_reply.status >= 400 && http_reply.status != HTTP_BAD_REQUEST && http_reply.status != HTTP_NOT_FOUND && http_reply.status != HTTP_INTERNAL_SERVER_ERROR) throw std::runtime_error(strprintf("server returned HTTP error %d", http_reply.status));
+	else if (http_reply.status == 401) throw std::runtime_error("incorrect rpcuser or rpcpassword");
+	else if (http_reply.status >= 400 && http_reply.status != 400 && http_reply.status != 404 && http_reply.status != 500) throw std::runtime_error(strprintf("server returned HTTP error %d", http_reply.status));
 	else if (http_reply.body.empty()) throw std::runtime_error("no response from server");
 	
 	UniValue valReply(UniValue::VSTR);
@@ -452,7 +452,11 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 	
 	// Build block from template fields
 	block.nVersion = gbt_res["version"].getInt<int>();
-	block.hashPrevBlock = uint256S(gbt_res["previousblockhash"].get_str());
+	{
+		uint256 prev;
+		prev.SetHex(gbt_res["previousblockhash"].get_str());
+		block.hashPrevBlock = prev;
+	}
 	block.nTime = gbt_res["curtime"].getInt<uint32_t>();
 	block.nBits = strtoul(gbt_res["bits"].get_str().c_str(), nullptr, 16);
 	block.nNonce = 0;
