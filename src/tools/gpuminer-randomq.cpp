@@ -23,6 +23,7 @@
 #include <streams.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <rpc/protocol.h>
 
 #ifdef WIN32
 #include <windows.h>
@@ -392,7 +393,7 @@ static UniValue DoRpcRequest(const std::string& strMethod, const UniValue& param
 	
 	if (http_reply.status == 0) throw std::runtime_error("couldn't connect to server");
 	else if (http_reply.status == HTTP_UNAUTHORIZED) throw std::runtime_error("incorrect rpcuser or rpcpassword");
-	else if (http_reply.status >= 400 && http_reply.status != HTTP_BADREQUEST && http_reply.status != HTTP_NOTFOUND && http_reply.status != HTTP_INTERNAL) throw std::runtime_error(strprintf("server returned HTTP error %d", http_reply.status));
+	else if (http_reply.status >= 400 && http_reply.status != HTTP_BAD_REQUEST && http_reply.status != HTTP_NOT_FOUND && http_reply.status != HTTP_INTERNAL_SERVER_ERROR) throw std::runtime_error(strprintf("server returned HTTP error %d", http_reply.status));
 	else if (http_reply.body.empty()) throw std::runtime_error("no response from server");
 	
 	UniValue valReply(UniValue::VSTR);
@@ -419,7 +420,7 @@ static UniValue RpcCallWait(const std::string& strMethod, const std::vector<std:
 	
 	if (timeout <= 0) timeout = DEFAULT_HTTP_CLIENT_TIMEOUT;
 	
-	reply = DoRpcRequest(strMethod, params);
+	reply = RpcCall(strMethod, params);
 	return reply;
 }
 
