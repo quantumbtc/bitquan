@@ -385,6 +385,28 @@ target_link_libraries(cpuminer-randomq
 )
 install_binary_component(cpuminer-randomq)
 
+# Standalone RandomQ GPU miner (OpenCL)
+find_package(OpenCL QUIET)
+if(OpenCL_FOUND)
+  add_executable(gpuminer-randomq
+    tools/gpuminer-randomq.cpp
+  )
+  target_link_libraries(gpuminer-randomq
+    PRIVATE
+      core_interface
+      bitquantum_cli
+      bitquantum_common
+      bitquantum_util
+      libevent::core
+      libevent::extra
+      OpenCL::OpenCL
+  )
+  target_compile_definitions(gpuminer-randomq PRIVATE OPENCL_FOUND)
+  install_binary_component(gpuminer-randomq)
+else()
+  message(STATUS "OpenCL not found, skipping gpuminer-randomq")
+endif()
+
 
 if(BUILD_TX)
   add_executable(bitquantum-tx bitquantum-tx.cpp)
