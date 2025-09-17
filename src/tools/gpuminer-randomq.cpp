@@ -78,54 +78,169 @@ namespace OpenCLMining {
         if (initialized) return true;
         
 #ifdef OPENCL_FOUND
+        tfm::format(std::cout, "[GPU] Initializing OpenCL...\n");
+        std::cout.flush();
+        
         cl_int err;
+        
+        // Get platform count first
+        cl_uint platform_count = 0;
+        err = clGetPlatformIDs(0, nullptr, &platform_count);
+        if (err != CL_SUCCESS || platform_count == 0) {
+            tfm::format(std::cout, "[GPU] ERROR: No OpenCL platforms found (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        tfm::format(std::cout, "[GPU] Found %u OpenCL platform(s)\n", platform_count);
+        std::cout.flush();
         
         // Get platform
         cl_platform_id platform;
         err = clGetPlatformIDs(1, &platform, nullptr);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to get OpenCL platform (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        
+        // Get platform info
+        char platform_name[256] = {0};
+        char platform_vendor[256] = {0};
+        char platform_version[256] = {0};
+        clGetPlatformInfo(platform, CL_PLATFORM_NAME, sizeof(platform_name), platform_name, nullptr);
+        clGetPlatformInfo(platform, CL_PLATFORM_VENDOR, sizeof(platform_vendor), platform_vendor, nullptr);
+        clGetPlatformInfo(platform, CL_PLATFORM_VERSION, sizeof(platform_version), platform_version, nullptr);
+        tfm::format(std::cout, "[GPU] Platform: %s (%s) - %s\n", platform_name, platform_vendor, platform_version);
+        std::cout.flush();
+        
+        // Get device count first
+        cl_uint device_count = 0;
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, nullptr, &device_count);
+        if (err != CL_SUCCESS || device_count == 0) {
+            tfm::format(std::cout, "[GPU] ERROR: No GPU devices found (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        tfm::format(std::cout, "[GPU] Found %u GPU device(s)\n", device_count);
+        std::cout.flush();
         
         // Get device
         cl_device_id device;
         err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to get GPU device (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        
+        // Get device info
+        char device_name[256] = {0};
+        char device_vendor[256] = {0};
+        char device_version[256] = {0};
+        cl_ulong global_mem_size = 0;
+        cl_uint compute_units = 0;
+        size_t max_work_group_size = 0;
+        clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), device_name, nullptr);
+        clGetDeviceInfo(device, CL_DEVICE_VENDOR, sizeof(device_vendor), device_vendor, nullptr);
+        clGetDeviceInfo(device, CL_DEVICE_VERSION, sizeof(device_version), device_version, nullptr);
+        clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(global_mem_size), &global_mem_size, nullptr);
+        clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(compute_units), &compute_units, nullptr);
+        clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, nullptr);
+        
+        tfm::format(std::cout, "[GPU] Device: %s (%s)\n", device_name, device_vendor);
+        tfm::format(std::cout, "[GPU] Version: %s\n", device_version);
+        tfm::format(std::cout, "[GPU] Global Memory: %.2f MB\n", (double)global_mem_size / (1024.0 * 1024.0));
+        tfm::format(std::cout, "[GPU] Compute Units: %u\n", compute_units);
+        tfm::format(std::cout, "[GPU] Max Work Group Size: %zu\n", max_work_group_size);
+        std::cout.flush();
         
         // Create context
+        tfm::format(std::cout, "[GPU] Creating OpenCL context...\n");
+        std::cout.flush();
         context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create OpenCL context (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         // Create command queue (prefer OpenCL 2.0 API)
+        tfm::format(std::cout, "[GPU] Creating command queue...\n");
+        std::cout.flush();
 #if defined(CL_VERSION_2_0)
         const cl_queue_properties props[] = {0};
         queue = clCreateCommandQueueWithProperties(context, device, props, &err);
+        if (err == CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] Using OpenCL 2.0+ command queue\n");
+        }
 #else
         queue = clCreateCommandQueue(context, device, 0, &err);
+        if (err == CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] Using OpenCL 1.x command queue\n");
+        }
 #endif
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create command queue (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        std::cout.flush();
         
         // Create buffers
+        tfm::format(std::cout, "[GPU] Creating OpenCL buffers...\n");
+        std::cout.flush();
         header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 80, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create header buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         nonce_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 4, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create nonce buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         result_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create result buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         target_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 32, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create target buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         found_flag_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 4, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create found flag buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
         found_nonce_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 4, nullptr, &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create found nonce buffer (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        tfm::format(std::cout, "[GPU] All buffers created successfully\n");
+        std::cout.flush();
         
         // Load kernel from file
+        tfm::format(std::cout, "[GPU] Loading OpenCL kernel...\n");
+        std::cout.flush();
         std::string kernel_path = "src/tools/randomq_kernel.cl";
         std::ifstream kernel_file(kernel_path);
         if (!kernel_file.is_open()) {
+            tfm::format(std::cout, "[GPU] Kernel file not found, using embedded fallback kernel\n");
+            std::cout.flush();
             // Fallback to embedded kernel
             const char* kernel_source = R"(
                 __kernel void randomq_mining(
@@ -171,19 +286,45 @@ namespace OpenCLMining {
             )";
             program = clCreateProgramWithSource(context, 1, &kernel_source, nullptr, &err);
         } else {
+            tfm::format(std::cout, "[GPU] Loading kernel from file: %s\n", kernel_path.c_str());
+            std::cout.flush();
             std::string kernel_source((std::istreambuf_iterator<char>(kernel_file)),
                                     std::istreambuf_iterator<char>());
             const char* source_str = kernel_source.c_str();
             program = clCreateProgramWithSource(context, 1, &source_str, nullptr, &err);
         }
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create program from source (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
+        tfm::format(std::cout, "[GPU] Compiling OpenCL kernel...\n");
+        std::cout.flush();
         err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            // Get build log
+            size_t log_size;
+            clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size);
+            std::vector<char> log(log_size);
+            clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log.data(), nullptr);
+            tfm::format(std::cout, "[GPU] ERROR: Kernel compilation failed (error: %d)\n", err);
+            tfm::format(std::cout, "[GPU] Build log: %s\n", log.data());
+            std::cout.flush();
+            return false;
+        }
         
+        tfm::format(std::cout, "[GPU] Creating kernel object...\n");
+        std::cout.flush();
         kernel = clCreateKernel(program, "randomq_mining", &err);
-        if (err != CL_SUCCESS) return false;
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create kernel (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
         
+        tfm::format(std::cout, "[GPU] OpenCL initialization completed successfully!\n");
+        std::cout.flush();
         initialized = true;
         return true;
 #else
@@ -922,30 +1063,84 @@ static void MinerLoop()
 
 int main(int argc, char* argv[])
 {
+	// Print startup banner
+	tfm::format(std::cout, "=== Bitquantum GPU Miner (RandomQ) ===\n");
+	tfm::format(std::cout, "[Startup] Version: 1.0.0\n");
+	tfm::format(std::cout, "[Startup] Build: %s %s\n", __DATE__, __TIME__);
+#ifdef WIN32
+	tfm::format(std::cout, "[Startup] Platform: Windows\n");
+#elif defined(__linux__)
+	tfm::format(std::cout, "[Startup] Platform: Linux\n");
+#elif defined(__APPLE__)
+	tfm::format(std::cout, "[Startup] Platform: macOS\n");
+#else
+	tfm::format(std::cout, "[Startup] Platform: Unknown\n");
+#endif
+#ifdef OPENCL_FOUND
+	tfm::format(std::cout, "[Startup] OpenCL Support: Available\n");
+#else
+	tfm::format(std::cout, "[Startup] OpenCL Support: Not Available (CPU only)\n");
+#endif
+	std::cout.flush();
+
 #ifdef WIN32
 	common::WinCmdLineArgs winArgs;
 	std::tie(argc, argv) = winArgs.get();
 #endif
+
+	tfm::format(std::cout, "[Startup] Initializing environment...\n");
+	std::cout.flush();
 	SetupEnvironment();
+	
+	tfm::format(std::cout, "[Startup] Setting up networking...\n");
+	std::cout.flush();
 	if (!SetupNetworking()) {
 		tfm::format(std::cerr, "Error: networking init failed\n");
 		return EXIT_FAILURE;
 	}
+	
 	try {
+		tfm::format(std::cout, "[Startup] Parsing command line arguments...\n");
+		std::cout.flush();
 		SetupMinerArgs(gArgs);
 		std::string error;
 		if (!gArgs.ParseParameters(argc, argv, error)) {
 			if (error != "") tfm::format(std::cerr, "Error parsing command line: %s\n", error);
 			return EXIT_FAILURE;
 		}
+
+		// Print parsed configuration
+		tfm::format(std::cout, "[Config] Chain: %s\n", ChainTypeToString(gArgs.GetChainType()).c_str());
+		tfm::format(std::cout, "[Config] RPC Connect: %s:%d\n", 
+			gArgs.GetArg("-rpcconnect", "127.0.0.1").c_str(),
+			gArgs.GetIntArg("-rpcport", 8332));
+		tfm::format(std::cout, "[Config] Mining Address: %s\n", 
+			gArgs.GetArg("-address", "NOT SET").c_str());
+		tfm::format(std::cout, "[Config] GPU Mining: %s\n", 
+			gArgs.GetBoolArg("-gpu", false) ? "Enabled" : "Disabled");
+		if (gArgs.GetBoolArg("-gpu", false)) {
+			tfm::format(std::cout, "[Config] GPU Work Size: %d\n", 
+				gArgs.GetIntArg("-worksize", 1024));
+		}
+		tfm::format(std::cout, "[Config] Max Tries: %d\n", 
+			gArgs.GetIntArg("-maxtries", 1000000));
+		std::cout.flush();
+
 		SelectBaseParams(gArgs.GetChainType());
 		if (auto cfgerr = common::InitConfig(gArgs, nullptr)) {
 			// ignore config failure for standalone mode
 		}
+		
+		tfm::format(std::cout, "[Startup] Setting up signal handlers...\n");
+		std::cout.flush();
 		std::signal(SIGINT, [](int){ g_stop.store(true); });
 #ifdef SIGTERM
 		std::signal(SIGTERM, [](int){ g_stop.store(true); });
 #endif
+		
+		tfm::format(std::cout, "[Startup] Starting mining loop...\n");
+		tfm::format(std::cout, "=====================================\n");
+		std::cout.flush();
 		MinerLoop();
 	} catch (const std::exception& e) {
 		tfm::format(std::cerr, "gpuminer-randomq error: %s\n", e.what());
