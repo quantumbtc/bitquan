@@ -263,8 +263,41 @@ namespace OpenCLMining {
             }
         }
         
+        // If not found, try to copy from source directory
         if (!kernel_found) {
-            tfm::format(std::cout, "[GPU] Kernel file not found, using embedded fallback kernel\n");
+            std::string source_kernel = "src/tools/randomq_kernel.cl";
+            std::string dest_kernel = "randomq_kernel.cl";
+            
+            std::ifstream src(source_kernel, std::ios::binary);
+            if (src.is_open()) {
+                std::ofstream dst(dest_kernel, std::ios::binary);
+                if (dst.is_open()) {
+                    dst << src.rdbuf();
+                    src.close();
+                    dst.close();
+                    
+                    // Try again with the copied file
+                    std::ifstream test_copied(dest_kernel);
+                    if (test_copied.is_open()) {
+                        kernel_path = dest_kernel;
+                        kernel_found = true;
+                        test_copied.close();
+                        tfm::format(std::cout, "[GPU] Copied and found kernel at: %s\n", dest_kernel.c_str());
+                    }
+                } else {
+                    tfm::format(std::cout, "[GPU] Failed to create kernel copy at: %s\n", dest_kernel.c_str());
+                }
+            } else {
+                tfm::format(std::cout, "[GPU] Source kernel not found at: %s\n", source_kernel.c_str());
+            }
+        }
+        
+        if (!kernel_found) {
+            tfm::format(std::cout, "[GPU] Kernel file not found in any of the following paths:\n");
+            for (const auto& path : kernel_paths) {
+                tfm::format(std::cout, "[GPU]   - %s\n", path.c_str());
+            }
+            tfm::format(std::cout, "[GPU] Using embedded fallback kernel (WARNING: This is NOT the real RandomQ algorithm!)\n");
             std::cout.flush();
             // Fallback to embedded kernel
             const char* kernel_source = R"(
