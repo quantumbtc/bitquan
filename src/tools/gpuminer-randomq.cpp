@@ -1066,7 +1066,6 @@ int main(int argc, char* argv[])
 	// Print startup banner
 	tfm::format(std::cout, "=== Bitquantum GPU Miner (RandomQ) ===\n");
 	tfm::format(std::cout, "[Startup] Version: 1.0.0\n");
-	tfm::format(std::cout, "[Startup] Build: %s %s\n", __DATE__, __TIME__);
 #ifdef WIN32
 	tfm::format(std::cout, "[Startup] Platform: Windows\n");
 #elif defined(__linux__)
