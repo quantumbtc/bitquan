@@ -189,9 +189,9 @@ namespace OpenCLMining {
         // Create buffers
         tfm::format(std::cout, "[GPU] Creating OpenCL buffers...\n");
         std::cout.flush();
-        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 32, nullptr, &err); // midstate: 32 bytes
+        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 80, nullptr, &err); // block header: 80 bytes
         if (err != CL_SUCCESS) {
-            tfm::format(std::cout, "[GPU] ERROR: Failed to create midstate buffer (error: %d)\n", err);
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create header buffer (error: %d)\n", err);
             std::cout.flush();
             return false;
         }
@@ -245,7 +245,7 @@ namespace OpenCLMining {
             // Fallback to embedded kernel
             const char* kernel_source = R"(
                 __kernel void randomq_mining(
-                    __global const uchar* midstate,
+                    __global const uchar* header,
                     __global uint* nonce,
                     __global uchar* result,
                     __global volatile uint* found_flag,
@@ -254,39 +254,8 @@ namespace OpenCLMining {
                     uint gid = get_global_id(0);
                     uint current_nonce = *nonce + gid;
                     
-                    // Load midstate from CPU (result of SHA256(header))
-                    uint randomq_state[8];
-                    for (int i = 0; i < 8; i++) {
-                        randomq_state[i] = ((uint)midstate[i*4 + 0]) |
-                                          ((uint)midstate[i*4 + 1] << 8) |
-                                          ((uint)midstate[i*4 + 2] << 16) |
-                                          ((uint)midstate[i*4 + 3] << 24);
-                    }
-                    
-                    // Mix in the current nonce
-                    randomq_state[0] ^= current_nonce;
-                    randomq_state[1] ^= (current_nonce >> 16);
-                    
-                    // RandomQ algorithm (8192 rounds)
-                    for (int round = 0; round < 8192; round++) {
-                        uint temp = randomq_state[0];
-                        for (int i = 0; i < 7; i++) {
-                            randomq_state[i] = randomq_state[i + 1] ^ (temp * 0x9e3779b9);
-                            temp = randomq_state[i];
-                        }
-                        randomq_state[7] = randomq_state[round % 8] ^ (temp * 0x9e3779b9);
-                        randomq_state[round % 8] ^= (randomq_state[(round + 1) % 8] << 13) | 
-                                                    (randomq_state[(round + 2) % 8] >> 19);
-                    }
-                    
-                    // Output RandomQ result (CPU will do final SHA256)
-                    __global uchar* my_result = result + (gid * 32);
-                    for (int i = 0; i < 8; i++) {
-                        my_result[i * 4 + 0] = (uchar)(randomq_state[i] & 0xFF);
-                        my_result[i * 4 + 1] = (uchar)((randomq_state[i] >> 8) & 0xFF);
-                        my_result[i * 4 + 2] = (uchar)((randomq_state[i] >> 16) & 0xFF);
-                        my_result[i * 4 + 3] = (uchar)((randomq_state[i] >> 24) & 0xFF);
-                    }
+                    // GPU just generates nonces - CPU does RandomQ verification
+                    // This ensures algorithm consistency until full GPU RandomQ is implemented
                 }
             )";
             program = clCreateProgramWithSource(context, 1, &kernel_source, nullptr, &err);
@@ -366,21 +335,18 @@ namespace OpenCLMining {
         
         cl_int err;
         
-        // Step 1: CPU does initial SHA256 to get midstate
-        CSHA256 sha256_first;
-        CBlockHeader headerCopy = block;
-        headerCopy.nNonce = start_nonce; // Use start nonce for midstate calculation
+        // For now, let's use CPU-only verification to ensure correctness
+        // GPU will just do simple parallel nonce testing
         
+        // Serialize block header template (without nonce)
         std::vector<unsigned char> serialized;
-        VectorWriter(serialized, 0, headerCopy);
-        sha256_first.Write(serialized.data(), serialized.size());
+        VectorWriter(serialized, 0, block);
+        std::vector<unsigned char> header_data(80);
+        memcpy(header_data.data(), serialized.data(), 80);
         
-        unsigned char midstate[32];
-        sha256_first.Finalize(midstate);
-        
-        // Write midstate to buffer (instead of raw header)
-        err = clEnqueueWriteBuffer(queue, header_buffer, CL_TRUE, 0, 32, 
-                                  midstate, 0, nullptr, nullptr);
+        // Write header to buffer
+        err = clEnqueueWriteBuffer(queue, header_buffer, CL_TRUE, 0, 80, 
+                                  header_data.data(), 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
         // Write start nonce
@@ -395,12 +361,12 @@ namespace OpenCLMining {
                                   &found_flag, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Set kernel arguments (midstate, nonce, result, found_flag, found_nonce)
-        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer); // midstate
+        // Set kernel arguments (header, nonce, result, found_flag, found_nonce)
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer); // block header
         if (err != CL_SUCCESS) return false;
         err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &nonce_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer); // RandomQ output
+        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer); // dummy result
         if (err != CL_SUCCESS) return false;
         err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &found_flag_buffer);
         if (err != CL_SUCCESS) return false;
@@ -413,31 +379,18 @@ namespace OpenCLMining {
                                     nullptr, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Read all RandomQ results back to CPU for final SHA256 + target check
-        std::vector<unsigned char> randomq_results(work_size * 32);
-        err = clEnqueueReadBuffer(queue, result_buffer, CL_TRUE, 0, work_size * 32, 
-                                 randomq_results.data(), 0, nullptr, nullptr);
-        if (err != CL_SUCCESS) return false;
-        
-        // Step 2: CPU does final SHA256 and target comparison for each result
+        // For now, just verify all nonces with CPU RandomQ to ensure correctness
+        // This is slower but guarantees algorithm consistency
         for (size_t i = 0; i < work_size; ++i) {
             uint32_t test_nonce = start_nonce + i;
             
-            // Get RandomQ result for this nonce
-            unsigned char* randomq_output = randomq_results.data() + (i * 32);
+            // Use CPU RandomQ to verify each nonce
+            CBlockHeader test_block = block;
+            test_block.nNonce = test_nonce;
+            const uint256 cpu_hash = RandomQMining::CalculateRandomQHashOptimized(test_block, test_nonce);
+            arith_uint256 cpu_result = UintToArith256(cpu_hash);
             
-            // Final SHA256
-            CSHA256 sha256_second;
-            sha256_second.Write(randomq_output, 32);
-            unsigned char final_hash[32];
-            sha256_second.Finalize(final_hash);
-            
-            // Convert to uint256 and check target
-            uint256 hash_result;
-            memcpy(hash_result.begin(), final_hash, 32);
-            arith_uint256 hash_arith = UintToArith256(hash_result);
-            
-            if (hash_arith <= target) {
+            if (cpu_result <= target) {
                 found_nonce = test_nonce;
                 return true;
             }
