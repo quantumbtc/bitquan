@@ -1000,9 +1000,26 @@ static void MinerLoop()
 			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); ++i) {
 				uint32_t test_nonce = 0;
 				if (OpenCLMining::MineNonce(block, current_nonce, test_nonce, target, work_size)) {
-					found_nonce = test_nonce;
-					found.store(true);
-					break;
+					// Verify GPU solution with CPU RandomQ algorithm
+					CBlockHeader test_block = block;
+					test_block.nNonce = test_nonce;
+					const uint256 cpu_hash = RandomQMining::CalculateRandomQHashOptimized(test_block, test_nonce);
+					arith_uint256 cpu_result = UintToArith256(cpu_hash);
+					
+					tfm::format(std::cout, "[GPU] Found potential solution: nonce=%u\n", test_nonce);
+					tfm::format(std::cout, "[GPU] Target:   %s\n", target.GetHex().c_str());
+					tfm::format(std::cout, "[GPU] CPU Hash: %s\n", cpu_result.GetHex().c_str());
+					tfm::format(std::cout, "[GPU] Valid:    %s\n", (cpu_result <= target) ? "YES" : "NO");
+					std::cout.flush();
+					
+					if (cpu_result <= target) {
+						found_nonce = test_nonce;
+						found.store(true);
+						break;
+					} else {
+						tfm::format(std::cout, "[GPU] WARNING: GPU solution rejected by CPU verification!\n");
+						std::cout.flush();
+					}
 				}
 				current_nonce += work_size;
 				window_hashes.fetch_add(work_size, std::memory_order_relaxed);
