@@ -244,17 +244,17 @@ namespace OpenCLMining {
             // Fallback to embedded kernel
             const char* kernel_source = R"(
                 __kernel void randomq_mining(
-                    __global const uchar* header,
-                    __global uint* nonce,
-                    __global uchar* result,
-                    __global const uchar* target,
-                    __global uint* found_flag,
-                    __global uint* found_nonce
+                    __global const uchar* header80,
+                    __global const uint* nonce_base,
+                    __global const uchar* target32,
+                    __global volatile uint* found_flag,
+                    __global uint* found_nonce,
+                    __global uchar* result_hash
                 ) {
                     uint gid = get_global_id(0);
-                    uint current_nonce = *nonce + gid;
+                    uint current_nonce = *nonce_base + gid;
                     
-                    if (atomic_load(found_flag) != 0) return;
+                    if (*found_flag != 0) return;
                     
                     uchar hash[32];
                     uint seed = current_nonce;
@@ -265,20 +265,20 @@ namespace OpenCLMining {
                     
                     bool meets_target = true;
                     for (int i = 0; i < 32; i++) {
-                        if (hash[i] > target[i]) {
+                        if (hash[i] > target32[i]) {
                             meets_target = false;
                             break;
-                        } else if (hash[i] < target[i]) {
+                        } else if (hash[i] < target32[i]) {
                             break;
                         }
                     }
                     
                     if (meets_target) {
-                        uint old_flag = atomic_exchange(found_flag, 1);
+                        uint old_flag = atomic_cmpxchg((volatile __global uint*)found_flag, 0u, 1u);
                         if (old_flag == 0) {
                             *found_nonce = current_nonce;
                             for (int i = 0; i < 32; i++) {
-                                result[i] = hash[i];
+                                result_hash[i] = hash[i];
                             }
                         }
                     }
@@ -377,10 +377,13 @@ namespace OpenCLMining {
                                   &start_nonce, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Write target
+        // Write target (convert to big-endian for GPU comparison)
         uint256 target_uint = ArithToUint256(target);
+        std::vector<unsigned char> target_bytes(32);
+        memcpy(target_bytes.data(), target_uint.begin(), 32);
+        std::reverse(target_bytes.begin(), target_bytes.end()); // Convert to big-endian
         err = clEnqueueWriteBuffer(queue, target_buffer, CL_TRUE, 0, 32, 
-                                  target_uint.begin(), 0, nullptr, nullptr);
+                                  target_bytes.data(), 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
         // Initialize found flag
@@ -389,18 +392,18 @@ namespace OpenCLMining {
                                   &found_flag, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Set kernel arguments
-        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer);
+        // Set kernel arguments (matching randomq_kernel.cl parameter order)
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer);      // header80
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &nonce_buffer);
+        err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &nonce_buffer);       // nonce_base
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer);
+        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &target_buffer);      // target32
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &target_buffer);
+        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &found_flag_buffer);  // found_flag
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_flag_buffer);
+        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_nonce_buffer); // found_nonce
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &found_nonce_buffer);
+        err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &result_buffer);      // result_hash
         if (err != CL_SUCCESS) return false;
         
         // Execute kernel
