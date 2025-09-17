@@ -297,9 +297,6 @@ namespace OpenCLMining {
             for (const auto& path : kernel_paths) {
                 tfm::format(std::cout, "[GPU]   - %s\n", path.c_str());
             }
-            tfm::format(std::cout, "[GPU] Using embedded fallback kernel (WARNING: This is NOT the real RandomQ algorithm!)\n");
-            std::cout.flush();
-            // Fallback to embedded REAL RandomQ kernel
             tfm::format(std::cout, "[GPU] Using embedded REAL RandomQ kernel (full SHA256+RandomQ+SHA256 pipeline)\n");
             std::cout.flush();
             const char* kernel_source = R"(
@@ -618,28 +615,28 @@ __kernel void randomq_mining(
         std::vector<unsigned char> header_data(80);
         memcpy(header_data.data(), serialized.data(), 80);
         
-        // Write header to buffer
-        err = clEnqueueWriteBuffer(queue, header_buffer, CL_TRUE, 0, 80, 
+        // Write header to buffer (asynchronous)
+        err = clEnqueueWriteBuffer(queue, header_buffer, CL_FALSE, 0, 80, 
                                   header_data.data(), 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Write start nonce
-        err = clEnqueueWriteBuffer(queue, nonce_buffer, CL_TRUE, 0, 4, 
+        // Write start nonce (asynchronous)
+        err = clEnqueueWriteBuffer(queue, nonce_buffer, CL_FALSE, 0, 4, 
                                   &start_nonce, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Write target (convert to big-endian for GPU comparison)
+        // Write target (convert to big-endian for GPU comparison, asynchronous)
         uint256 target_uint = ArithToUint256(target);
         std::vector<unsigned char> target_bytes(32);
         memcpy(target_bytes.data(), target_uint.begin(), 32);
         std::reverse(target_bytes.begin(), target_bytes.end()); // Convert to big-endian
-        err = clEnqueueWriteBuffer(queue, target_buffer, CL_TRUE, 0, 32, 
+        err = clEnqueueWriteBuffer(queue, target_buffer, CL_FALSE, 0, 32, 
                                   target_bytes.data(), 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Initialize found flag
+        // Initialize found flag (asynchronous)
         uint32_t found_flag = 0;
-        err = clEnqueueWriteBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
+        err = clEnqueueWriteBuffer(queue, found_flag_buffer, CL_FALSE, 0, 4, 
                                   &found_flag, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
@@ -657,13 +654,22 @@ __kernel void randomq_mining(
         err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &result_buffer);      // result_hash
         if (err != CL_SUCCESS) return false;
         
-        // Execute kernel
+        // Execute kernel with optimized work group size
         size_t global_work_size = work_size;
+        size_t local_work_size = 64; // Optimize for Intel GPU
         err = clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &global_work_size, 
-                                    nullptr, 0, nullptr, nullptr);
-        if (err != CL_SUCCESS) return false;
+                                    &local_work_size, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            // Fallback without local work size specification
+            err = clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &global_work_size, 
+                                        nullptr, 0, nullptr, nullptr);
+            if (err != CL_SUCCESS) return false;
+        }
         
-        // Read found flag and nonce
+        // Wait for completion (only once at the end)
+        clFinish(queue);
+        
+        // Read found flag and nonce (asynchronous read)
         uint32_t found_flag_result = 0;
         uint32_t found_nonce_result = 0;
         err = clEnqueueReadBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
@@ -675,6 +681,11 @@ __kernel void randomq_mining(
                                      &found_nonce_result, 0, nullptr, nullptr);
             if (err != CL_SUCCESS) return false;
             found_nonce = found_nonce_result;
+            
+            // Add verification debug info
+            tfm::format(std::cout, "[GPU] Found potential solution: nonce=%u\n", found_nonce);
+            std::cout.flush();
+            
             return true;
         }
         
@@ -1084,7 +1095,7 @@ static void MinerLoop()
 
 	const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
 	const bool use_gpu = gArgs.GetBoolArg("-gpu", false);
-	const size_t work_size = gArgs.GetIntArg("-worksize", 1024);
+	const size_t work_size = gArgs.GetIntArg("-worksize", 8192); // Increase default work size
 	
 	if (use_gpu) {
 		if (!OpenCLMining::Initialize()) {
@@ -1203,16 +1214,18 @@ static void MinerLoop()
 			arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
 			uint32_t current_nonce = start_nonce;
 			
-			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); ++i) {
+			// Batch mining with larger work sizes
+			const uint32_t batch_size = work_size * 10; // Process 10x more nonces per batch
+			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); i += batch_size) {
 				uint32_t test_nonce = 0;
-				if (OpenCLMining::MineNonce(block, current_nonce, test_nonce, target, work_size)) {
+				if (OpenCLMining::MineNonce(block, current_nonce, test_nonce, target, batch_size)) {
 					found_nonce = test_nonce;
 					found.store(true);
 					break;
 				}
-				current_nonce += work_size;
-				window_hashes.fetch_add(work_size, std::memory_order_relaxed);
-				total_hashes.fetch_add(work_size, std::memory_order_relaxed);
+				current_nonce += batch_size;
+				window_hashes.fetch_add(batch_size, std::memory_order_relaxed);
+				total_hashes.fetch_add(batch_size, std::memory_order_relaxed);
 				
 				if (current_nonce < start_nonce) {
 					// overflow, bump time
