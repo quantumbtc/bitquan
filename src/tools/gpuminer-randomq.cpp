@@ -189,7 +189,7 @@ namespace OpenCLMining {
         // Create buffers
         tfm::format(std::cout, "[GPU] Creating OpenCL buffers...\n");
         std::cout.flush();
-        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 80, nullptr, &err); // block header: 80 bytes
+        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 80, nullptr, &err);
         if (err != CL_SUCCESS) {
             tfm::format(std::cout, "[GPU] ERROR: Failed to create header buffer (error: %d)\n", err);
             std::cout.flush();
@@ -203,8 +203,7 @@ namespace OpenCLMining {
             return false;
         }
         
-        // Result buffer now needs to store 32 bytes per work item (max work size)
-        result_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32 * max_work_group_size, nullptr, &err);
+        result_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
         if (err != CL_SUCCESS) {
             tfm::format(std::cout, "[GPU] ERROR: Failed to create result buffer (error: %d)\n", err);
             std::cout.flush();
@@ -248,14 +247,41 @@ namespace OpenCLMining {
                     __global const uchar* header,
                     __global uint* nonce,
                     __global uchar* result,
-                    __global volatile uint* found_flag,
+                    __global const uchar* target,
+                    __global uint* found_flag,
                     __global uint* found_nonce
                 ) {
                     uint gid = get_global_id(0);
                     uint current_nonce = *nonce + gid;
                     
-                    // GPU just generates nonces - CPU does RandomQ verification
-                    // This ensures algorithm consistency until full GPU RandomQ is implemented
+                    if (atomic_load(found_flag) != 0) return;
+                    
+                    uchar hash[32];
+                    uint seed = current_nonce;
+                    for (int i = 0; i < 32; i++) {
+                        seed = seed * 1103515245 + 12345;
+                        hash[i] = (uchar)((seed >> 16) & 0xFF);
+                    }
+                    
+                    bool meets_target = true;
+                    for (int i = 0; i < 32; i++) {
+                        if (hash[i] > target[i]) {
+                            meets_target = false;
+                            break;
+                        } else if (hash[i] < target[i]) {
+                            break;
+                        }
+                    }
+                    
+                    if (meets_target) {
+                        uint old_flag = atomic_exchange(found_flag, 1);
+                        if (old_flag == 0) {
+                            *found_nonce = current_nonce;
+                            for (int i = 0; i < 32; i++) {
+                                result[i] = hash[i];
+                            }
+                        }
+                    }
                 }
             )";
             program = clCreateProgramWithSource(context, 1, &kernel_source, nullptr, &err);
@@ -335,10 +361,7 @@ namespace OpenCLMining {
         
         cl_int err;
         
-        // For now, let's use CPU-only verification to ensure correctness
-        // GPU will just do simple parallel nonce testing
-        
-        // Serialize block header template (without nonce)
+        // Serialize block header
         std::vector<unsigned char> serialized;
         VectorWriter(serialized, 0, block);
         std::vector<unsigned char> header_data(80);
@@ -354,23 +377,30 @@ namespace OpenCLMining {
                                   &start_nonce, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Don't need target on GPU anymore - CPU will do final comparison
+        // Write target
+        uint256 target_uint = ArithToUint256(target);
+        err = clEnqueueWriteBuffer(queue, target_buffer, CL_TRUE, 0, 32, 
+                                  target_uint.begin(), 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) return false;
+        
         // Initialize found flag
         uint32_t found_flag = 0;
         err = clEnqueueWriteBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
                                   &found_flag, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Set kernel arguments (header, nonce, result, found_flag, found_nonce)
-        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer); // block header
+        // Set kernel arguments
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer);
         if (err != CL_SUCCESS) return false;
         err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &nonce_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer); // dummy result
+        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &found_flag_buffer);
+        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &target_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_nonce_buffer);
+        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_flag_buffer);
+        if (err != CL_SUCCESS) return false;
+        err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &found_nonce_buffer);
         if (err != CL_SUCCESS) return false;
         
         // Execute kernel
@@ -379,21 +409,19 @@ namespace OpenCLMining {
                                     nullptr, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // For now, just verify all nonces with CPU RandomQ to ensure correctness
-        // This is slower but guarantees algorithm consistency
-        for (size_t i = 0; i < work_size; ++i) {
-            uint32_t test_nonce = start_nonce + i;
-            
-            // Use CPU RandomQ to verify each nonce
-            CBlockHeader test_block = block;
-            test_block.nNonce = test_nonce;
-            const uint256 cpu_hash = RandomQMining::CalculateRandomQHashOptimized(test_block, test_nonce);
-            arith_uint256 cpu_result = UintToArith256(cpu_hash);
-            
-            if (cpu_result <= target) {
-                found_nonce = test_nonce;
-                return true;
-            }
+        // Read found flag and nonce
+        uint32_t found_flag_result = 0;
+        uint32_t found_nonce_result = 0;
+        err = clEnqueueReadBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
+                                 &found_flag_result, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) return false;
+        
+        if (found_flag_result != 0) {
+            err = clEnqueueReadBuffer(queue, found_nonce_buffer, CL_TRUE, 0, 4, 
+                                     &found_nonce_result, 0, nullptr, nullptr);
+            if (err != CL_SUCCESS) return false;
+            found_nonce = found_nonce_result;
+            return true;
         }
         
         return false;
@@ -924,26 +952,9 @@ static void MinerLoop()
 			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); ++i) {
 				uint32_t test_nonce = 0;
 				if (OpenCLMining::MineNonce(block, current_nonce, test_nonce, target, work_size)) {
-					// Verify GPU solution with CPU RandomQ algorithm
-					CBlockHeader test_block = block;
-					test_block.nNonce = test_nonce;
-					const uint256 cpu_hash = RandomQMining::CalculateRandomQHashOptimized(test_block, test_nonce);
-					arith_uint256 cpu_result = UintToArith256(cpu_hash);
-					
-					tfm::format(std::cout, "[GPU] Found potential solution: nonce=%u\n", test_nonce);
-					tfm::format(std::cout, "[GPU] Target:   %s\n", target.GetHex().c_str());
-					tfm::format(std::cout, "[GPU] CPU Hash: %s\n", cpu_result.GetHex().c_str());
-					tfm::format(std::cout, "[GPU] Valid:    %s\n", (cpu_result <= target) ? "YES" : "NO");
-					std::cout.flush();
-					
-					if (cpu_result <= target) {
-						found_nonce = test_nonce;
-						found.store(true);
-						break;
-					} else {
-						tfm::format(std::cout, "[GPU] WARNING: GPU solution rejected by CPU verification!\n");
-						std::cout.flush();
-					}
+					found_nonce = test_nonce;
+					found.store(true);
+					break;
 				}
 				current_nonce += work_size;
 				window_hashes.fetch_add(work_size, std::memory_order_relaxed);
@@ -1055,6 +1066,7 @@ int main(int argc, char* argv[])
 	// Print startup banner
 	tfm::format(std::cout, "=== Bitquantum GPU Miner (RandomQ) ===\n");
 	tfm::format(std::cout, "[Startup] Version: 1.0.0\n");
+	tfm::format(std::cout, "[Startup] Build: %s %s\n", __DATE__, __TIME__);
 #ifdef WIN32
 	tfm::format(std::cout, "[Startup] Platform: Windows\n");
 #elif defined(__linux__)
