@@ -682,11 +682,25 @@ __kernel void randomq_mining(
             if (err != CL_SUCCESS) return false;
             found_nonce = found_nonce_result;
             
-            // Add verification debug info
+            // Verify the solution with CPU RandomQ
+            CBlockHeader test_block = block;
+            test_block.nNonce = found_nonce;
+            const uint256 cpu_hash = RandomQMining::CalculateRandomQHashOptimized(test_block, found_nonce);
+            arith_uint256 cpu_result = UintToArith256(cpu_hash);
+            
             tfm::format(std::cout, "[GPU] Found potential solution: nonce=%u\n", found_nonce);
+            tfm::format(std::cout, "[GPU] Target:   %s\n", target.ToString());
+            tfm::format(std::cout, "[GPU] CPU Hash: %s\n", cpu_hash.ToString());
+            tfm::format(std::cout, "[GPU] Valid:    %s\n", (cpu_result <= target) ? "YES" : "NO");
             std::cout.flush();
             
-            return true;
+            if (cpu_result <= target) {
+                return true;
+            } else {
+                tfm::format(std::cout, "[GPU] WARNING: GPU solution rejected by CPU verification!\n");
+                std::cout.flush();
+                return false;
+            }
         }
         
         return false;
@@ -1218,11 +1232,25 @@ static void MinerLoop()
 			const uint32_t batch_size = work_size * 10; // Process 10x more nonces per batch
 			for (int64_t i = 0; i < maxtries && !g_stop.load() && !found.load(); i += batch_size) {
 				uint32_t test_nonce = 0;
+				
+				// Debug: Print mining attempt info
+				tfm::format(std::cout, "[GPU] Mining batch: start_nonce=%u, batch_size=%u, target=%s\n", 
+					   current_nonce, batch_size, target.ToString());
+				std::cout.flush();
+				
 				if (OpenCLMining::MineNonce(block, current_nonce, test_nonce, target, batch_size)) {
 					found_nonce = test_nonce;
 					found.store(true);
+					
+					tfm::format(std::cout, "[GPU] Found solution in batch! nonce=%u\n", test_nonce);
+					std::cout.flush();
 					break;
+				} else {
+					tfm::format(std::cout, "[GPU] No solution found in batch (nonces %u-%u)\n", 
+						   current_nonce, current_nonce + batch_size - 1);
+					std::cout.flush();
 				}
+				
 				current_nonce += batch_size;
 				window_hashes.fetch_add(batch_size, std::memory_order_relaxed);
 				total_hashes.fetch_add(batch_size, std::memory_order_relaxed);
@@ -1231,6 +1259,8 @@ static void MinerLoop()
 					// overflow, bump time
 					uint32_t current_time = static_cast<uint32_t>(GetTime());
 					block.nTime = current_time;
+					tfm::format(std::cout, "[GPU] Nonce overflow, updated block time to %u\n", current_time);
+					std::cout.flush();
 				}
 			}
 		} else {
@@ -1275,9 +1305,19 @@ static void MinerLoop()
 			std::string sub_hex;
 			if (!tmpl_hex.empty()) {
 				sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
+				tfm::format(std::cout, "[Submit] Using template hex with patched nonce\n");
 			} else {
 				sub_hex = BuildFullBlockHex(block);
+				tfm::format(std::cout, "[Submit] Using full block encoding\n");
 			}
+			
+			// Print block submission details
+			tfm::format(std::cout, "[Submit] Block hex length: %zu bytes\n", sub_hex.length() / 2);
+			tfm::format(std::cout, "[Submit] Block hex (first 160 chars): %s...\n", 
+				   sub_hex.substr(0, 160).c_str());
+			tfm::format(std::cout, "[Submit] Submitting block to network...\n");
+			std::cout.flush();
+			
 			UniValue sub = RpcCallWait("submitblock", {sub_hex});
 			// Print raw submit result (robust)
 			{
