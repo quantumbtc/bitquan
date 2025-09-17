@@ -236,9 +236,34 @@ namespace OpenCLMining {
         // Load kernel from file
         tfm::format(std::cout, "[GPU] Loading OpenCL kernel...\n");
         std::cout.flush();
-        std::string kernel_path = "src/tools/randomq_kernel.cl";
-        std::ifstream kernel_file(kernel_path);
-        if (!kernel_file.is_open()) {
+        // Try multiple possible kernel paths
+        std::vector<std::string> kernel_paths = {
+            "randomq_kernel.cl",                     // From current directory
+            "src/tools/randomq_kernel.cl",           // From project root
+            "../src/tools/randomq_kernel.cl",        // From build directory
+            "../../src/tools/randomq_kernel.cl",     // From nested build directory
+            "./src/tools/randomq_kernel.cl",         // Explicit relative path
+            "../bitquan/src/tools/randomq_kernel.cl" // Alternative build path
+        };
+        
+        std::string kernel_path;
+        bool kernel_found = false;
+        
+        // Try to find the kernel file
+        for (const auto& path : kernel_paths) {
+            std::ifstream test_file(path);
+            if (test_file.is_open()) {
+                kernel_path = path;
+                kernel_found = true;
+                test_file.close();
+                tfm::format(std::cout, "[GPU] Found kernel at: %s\n", path.c_str());
+                break;
+            } else {
+                tfm::format(std::cout, "[GPU] Kernel not found at: %s\n", path.c_str());
+            }
+        }
+        
+        if (!kernel_found) {
             tfm::format(std::cout, "[GPU] Kernel file not found, using embedded fallback kernel\n");
             std::cout.flush();
             // Fallback to embedded kernel
@@ -288,8 +313,10 @@ namespace OpenCLMining {
         } else {
             tfm::format(std::cout, "[GPU] Loading kernel from file: %s\n", kernel_path.c_str());
             std::cout.flush();
+            std::ifstream kernel_file(kernel_path);
             std::string kernel_source((std::istreambuf_iterator<char>(kernel_file)),
                                     std::istreambuf_iterator<char>());
+            kernel_file.close();
             const char* source_str = kernel_source.c_str();
             program = clCreateProgramWithSource(context, 1, &source_str, nullptr, &err);
         }
