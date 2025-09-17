@@ -37,7 +37,12 @@ __kernel void randomq_mining(
     // Mix in header data (simplified - real implementation would process full header)
     for (int i = 0; i < 20; i++) { // 80 bytes header / 4 = 20 uint32s
         if (i < 19) {
-            hash_state[i % 8] ^= ((uint*)header)[i];
+            // Read 4 bytes from header and combine into uint32
+            uint header_word = ((uint)header[i*4 + 0]) |
+                              ((uint)header[i*4 + 1] << 8) |
+                              ((uint)header[i*4 + 2] << 16) |
+                              ((uint)header[i*4 + 3] << 24);
+            hash_state[i % 8] ^= header_word;
         } else {
             // Last word includes the nonce
             hash_state[i % 8] ^= current_nonce;
