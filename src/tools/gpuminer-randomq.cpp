@@ -189,9 +189,9 @@ namespace OpenCLMining {
         // Create buffers
         tfm::format(std::cout, "[GPU] Creating OpenCL buffers...\n");
         std::cout.flush();
-        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 80, nullptr, &err);
+        header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, 32, nullptr, &err); // midstate: 32 bytes
         if (err != CL_SUCCESS) {
-            tfm::format(std::cout, "[GPU] ERROR: Failed to create header buffer (error: %d)\n", err);
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create midstate buffer (error: %d)\n", err);
             std::cout.flush();
             return false;
         }
@@ -203,7 +203,8 @@ namespace OpenCLMining {
             return false;
         }
         
-        result_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
+        // Result buffer now needs to store 32 bytes per work item (max work size)
+        result_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32 * max_work_group_size, nullptr, &err);
         if (err != CL_SUCCESS) {
             tfm::format(std::cout, "[GPU] ERROR: Failed to create result buffer (error: %d)\n", err);
             std::cout.flush();
@@ -244,91 +245,47 @@ namespace OpenCLMining {
             // Fallback to embedded kernel
             const char* kernel_source = R"(
                 __kernel void randomq_mining(
-                    __global const uchar* header,
+                    __global const uchar* midstate,
                     __global uint* nonce,
                     __global uchar* result,
-                    __global const uchar* target,
                     __global volatile uint* found_flag,
                     __global uint* found_nonce
                 ) {
                     uint gid = get_global_id(0);
                     uint current_nonce = *nonce + gid;
                     
-                    // Check if another work item already found a solution
-                    if (*found_flag != 0) return;
-                    
-                    // Implement RandomQ algorithm: SHA256 -> RandomQ(8192 rounds) -> SHA256
-                    uchar hash[32];
-                    
-                    // Step 1: Initial SHA256 state
-                    uint hash_state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                                          0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-                    
-                    // Mix in header data (simplified)
-                    for (int i = 0; i < 20; i++) {
-                        if (i < 19) {
-                            // Read 4 bytes from header and combine into uint32
-                            uint header_word = ((uint)header[i*4 + 0]) |
-                                              ((uint)header[i*4 + 1] << 8) |
-                                              ((uint)header[i*4 + 2] << 16) |
-                                              ((uint)header[i*4 + 3] << 24);
-                            hash_state[i % 8] ^= header_word;
-                        } else {
-                            hash_state[i % 8] ^= current_nonce;
-                        }
-                    }
-                    
-                    // Step 2: RandomQ-like algorithm (8192 rounds)
+                    // Load midstate from CPU (result of SHA256(header))
                     uint randomq_state[8];
                     for (int i = 0; i < 8; i++) {
-                        randomq_state[i] = hash_state[i];
+                        randomq_state[i] = ((uint)midstate[i*4 + 0]) |
+                                          ((uint)midstate[i*4 + 1] << 8) |
+                                          ((uint)midstate[i*4 + 2] << 16) |
+                                          ((uint)midstate[i*4 + 3] << 24);
                     }
                     
+                    // Mix in the current nonce
+                    randomq_state[0] ^= current_nonce;
+                    randomq_state[1] ^= (current_nonce >> 16);
+                    
+                    // RandomQ algorithm (8192 rounds)
                     for (int round = 0; round < 8192; round++) {
                         uint temp = randomq_state[0];
                         for (int i = 0; i < 7; i++) {
                             randomq_state[i] = randomq_state[i + 1] ^ (temp * 0x9e3779b9);
                             temp = randomq_state[i];
                         }
-                        randomq_state[7] = hash_state[round % 8] ^ (temp * 0x9e3779b9);
+                        randomq_state[7] = randomq_state[round % 8] ^ (temp * 0x9e3779b9);
                         randomq_state[round % 8] ^= (randomq_state[(round + 1) % 8] << 13) | 
                                                     (randomq_state[(round + 2) % 8] >> 19);
                     }
                     
-                    // Step 3: Final hash
+                    // Output RandomQ result (CPU will do final SHA256)
+                    __global uchar* my_result = result + (gid * 32);
                     for (int i = 0; i < 8; i++) {
-                        hash_state[i] ^= randomq_state[i];
-                    }
-                    
-                    // Convert to bytes
-                    for (int i = 0; i < 8; i++) {
-                        hash[i * 4 + 0] = (uchar)(hash_state[i] & 0xFF);
-                        hash[i * 4 + 1] = (uchar)((hash_state[i] >> 8) & 0xFF);
-                        hash[i * 4 + 2] = (uchar)((hash_state[i] >> 16) & 0xFF);
-                        hash[i * 4 + 3] = (uchar)((hash_state[i] >> 24) & 0xFF);
-                    }
-                    
-                    // Check if hash meets target (big-endian comparison)
-                    bool meets_target = true;
-                    for (int i = 0; i < 32; i++) {
-                        if (hash[i] > target[i]) {
-                            meets_target = false;
-                            break;
-                        } else if (hash[i] < target[i]) {
-                            break;
-                        }
-                    }
-                    
-                    if (meets_target) {
-                        // Use OpenCL atomic function to set found flag
-                        uint old_flag = atomic_xchg(found_flag, 1);
-                        if (old_flag == 0) {
-                            // We were the first to find a solution
-                            *found_nonce = current_nonce;
-                            for (int i = 0; i < 32; i++) {
-                                result[i] = hash[i];
-                            }
-                        }
+                        my_result[i * 4 + 0] = (uchar)(randomq_state[i] & 0xFF);
+                        my_result[i * 4 + 1] = (uchar)((randomq_state[i] >> 8) & 0xFF);
+                        my_result[i * 4 + 2] = (uchar)((randomq_state[i] >> 16) & 0xFF);
+                        my_result[i * 4 + 3] = (uchar)((randomq_state[i] >> 24) & 0xFF);
                     }
                 }
             )";
@@ -409,15 +366,21 @@ namespace OpenCLMining {
         
         cl_int err;
         
-        // Serialize block header
-        std::vector<unsigned char> serialized;
-        VectorWriter(serialized, 0, block);
-        std::vector<unsigned char> header_data(80);
-        memcpy(header_data.data(), serialized.data(), 80);
+        // Step 1: CPU does initial SHA256 to get midstate
+        CSHA256 sha256_first;
+        CBlockHeader headerCopy = block;
+        headerCopy.nNonce = start_nonce; // Use start nonce for midstate calculation
         
-        // Write header to buffer
-        err = clEnqueueWriteBuffer(queue, header_buffer, CL_TRUE, 0, 80, 
-                                  header_data.data(), 0, nullptr, nullptr);
+        std::vector<unsigned char> serialized;
+        VectorWriter(serialized, 0, headerCopy);
+        sha256_first.Write(serialized.data(), serialized.size());
+        
+        unsigned char midstate[32];
+        sha256_first.Finalize(midstate);
+        
+        // Write midstate to buffer (instead of raw header)
+        err = clEnqueueWriteBuffer(queue, header_buffer, CL_TRUE, 0, 32, 
+                                  midstate, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
         // Write start nonce
@@ -425,30 +388,23 @@ namespace OpenCLMining {
                                   &start_nonce, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Write target
-        uint256 target_uint = ArithToUint256(target);
-        err = clEnqueueWriteBuffer(queue, target_buffer, CL_TRUE, 0, 32, 
-                                  target_uint.begin(), 0, nullptr, nullptr);
-        if (err != CL_SUCCESS) return false;
-        
+        // Don't need target on GPU anymore - CPU will do final comparison
         // Initialize found flag
         uint32_t found_flag = 0;
         err = clEnqueueWriteBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
                                   &found_flag, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Set kernel arguments
-        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer);
+        // Set kernel arguments (midstate, nonce, result, found_flag, found_nonce)
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &header_buffer); // midstate
         if (err != CL_SUCCESS) return false;
         err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &nonce_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer);
+        err = clSetKernelArg(kernel, 2, sizeof(cl_mem), &result_buffer); // RandomQ output
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &target_buffer);
+        err = clSetKernelArg(kernel, 3, sizeof(cl_mem), &found_flag_buffer);
         if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_flag_buffer);
-        if (err != CL_SUCCESS) return false;
-        err = clSetKernelArg(kernel, 5, sizeof(cl_mem), &found_nonce_buffer);
+        err = clSetKernelArg(kernel, 4, sizeof(cl_mem), &found_nonce_buffer);
         if (err != CL_SUCCESS) return false;
         
         // Execute kernel
@@ -457,19 +413,34 @@ namespace OpenCLMining {
                                     nullptr, 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        // Read found flag and nonce
-        uint32_t found_flag_result = 0;
-        uint32_t found_nonce_result = 0;
-        err = clEnqueueReadBuffer(queue, found_flag_buffer, CL_TRUE, 0, 4, 
-                                 &found_flag_result, 0, nullptr, nullptr);
+        // Read all RandomQ results back to CPU for final SHA256 + target check
+        std::vector<unsigned char> randomq_results(work_size * 32);
+        err = clEnqueueReadBuffer(queue, result_buffer, CL_TRUE, 0, work_size * 32, 
+                                 randomq_results.data(), 0, nullptr, nullptr);
         if (err != CL_SUCCESS) return false;
         
-        if (found_flag_result != 0) {
-            err = clEnqueueReadBuffer(queue, found_nonce_buffer, CL_TRUE, 0, 4, 
-                                     &found_nonce_result, 0, nullptr, nullptr);
-            if (err != CL_SUCCESS) return false;
-            found_nonce = found_nonce_result;
-            return true;
+        // Step 2: CPU does final SHA256 and target comparison for each result
+        for (size_t i = 0; i < work_size; ++i) {
+            uint32_t test_nonce = start_nonce + i;
+            
+            // Get RandomQ result for this nonce
+            unsigned char* randomq_output = randomq_results.data() + (i * 32);
+            
+            // Final SHA256
+            CSHA256 sha256_second;
+            sha256_second.Write(randomq_output, 32);
+            unsigned char final_hash[32];
+            sha256_second.Finalize(final_hash);
+            
+            // Convert to uint256 and check target
+            uint256 hash_result;
+            memcpy(hash_result.begin(), final_hash, 32);
+            arith_uint256 hash_arith = UintToArith256(hash_result);
+            
+            if (hash_arith <= target) {
+                found_nonce = test_nonce;
+                return true;
+            }
         }
         
         return false;
