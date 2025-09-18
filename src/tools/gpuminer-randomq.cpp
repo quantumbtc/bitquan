@@ -30,6 +30,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <span>
 
 #ifdef WIN32
 #include <windows.h>
@@ -732,10 +733,10 @@ __kernel void randomq_mining(
         err |= clEnqueueReadBuffer(queue, debug_first_sha_buffer, CL_TRUE, 0, 32, first_sha, 0, nullptr, nullptr);
         err |= clEnqueueReadBuffer(queue, debug_randomq_out_buffer, CL_TRUE, 0, 32, randomq_out, 0, nullptr, nullptr);
         
-        // Convert to hex strings
-        result_hash_hex = HexStr(final_hash, final_hash + 32);
-        first_sha_hex = HexStr(first_sha, first_sha + 32);
-        randomq_out_hex = HexStr(randomq_out, randomq_out + 32);
+        // Convert to hex strings using std::span
+        result_hash_hex = HexStr(std::span<const unsigned char>(final_hash, 32));
+        first_sha_hex = HexStr(std::span<const unsigned char>(first_sha, 32));
+        randomq_out_hex = HexStr(std::span<const unsigned char>(randomq_out, 32));
         
         // Cleanup
         clReleaseMemObject(debug_header_buffer);
