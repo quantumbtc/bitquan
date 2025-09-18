@@ -1529,12 +1529,21 @@ bool VerifyGenesisBlock() {
 	std::cout << "\n⚙️ GPU Mining Test:" << std::endl;
 	std::cout << "  Testing nonce range around " << GENESIS_NONCE << "..." << std::endl;
 	
+	// Create CBlockHeader manually for GPU testing
+	CBlockHeader block_header;
+	block_header.nVersion = GENESIS_VERSION;
+	block_header.hashPrevBlock.SetNull(); // All zeros for genesis
+	block_header.hashMerkleRoot = *merkle_opt;
+	block_header.nTime = GENESIS_TIME;
+	block_header.nBits = GENESIS_BITS;
+	block_header.nNonce = GENESIS_NONCE;
+	
 	// Test mining starting from a bit before the known nonce
 	uint32_t test_start_nonce = (GENESIS_NONCE > 1000) ? GENESIS_NONCE - 1000 : 0;
 	uint32_t found_nonce = 0;
 	
 	auto gpu_start = std::chrono::high_resolution_clock::now();
-	bool gpu_found = OpenCLMining::MineNonce(header, test_start_nonce, target.GetCompact(), found_nonce);
+	bool gpu_found = OpenCLMining::MineNonce(block_header, test_start_nonce, found_nonce, target);
 	auto gpu_end = std::chrono::high_resolution_clock::now();
 	auto gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(gpu_end - gpu_start);
 	
