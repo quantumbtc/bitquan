@@ -23,6 +23,7 @@
 #include <streams.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <arith_uint256.h>
 #include <chrono>
 #include <sstream>
 #include <iomanip>
@@ -1550,8 +1551,7 @@ bool VerifyGenesisBlock() {
 	}
 	
 	// Check if hash meets target
-	arith_uint256 computed_arith;
-	computed_arith.SetHex(computed_hex);
+	arith_uint256 computed_arith = UintToArith256(computed_hash);
 	bool meets_target = computed_arith <= target;
 	std::cout << "  Meets Target: " << (meets_target ? "✅ YES" : "❌ NO") << std::endl;
 	
@@ -1571,9 +1571,15 @@ bool VerifyGenesisBlock() {
 		// Test single nonce with GPU
 		std::cout << "  Testing with known nonce " << GENESIS_NONCE << "..." << std::endl;
 		
+		// Create CBlockHeader from raw header data
+		CBlockHeader block_header;
+		std::vector<unsigned char> header_vec(header, header + 80);
+		CDataStream stream(header_vec, SER_NETWORK, 0);
+		stream >> block_header;
+		
 		uint32_t found_nonce = 0;
 		auto gpu_start = std::chrono::high_resolution_clock::now();
-		bool gpu_found = OpenCLMining::MineNonce(header, GENESIS_NONCE, target.GetCompact(), found_nonce);
+		bool gpu_found = OpenCLMining::MineNonce(block_header, GENESIS_NONCE, found_nonce, target);
 		auto gpu_end = std::chrono::high_resolution_clock::now();
 		auto gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(gpu_end - gpu_start);
 		
@@ -1596,8 +1602,7 @@ bool VerifyGenesisBlock() {
 				uint256 gpu_hash = RandomQHash(test_header);
 				std::cout << "  GPU nonce " << found_nonce << " produces hash: " << gpu_hash.GetHex() << std::endl;
 				
-				arith_uint256 gpu_arith;
-				gpu_arith.SetHex(gpu_hash.GetHex());
+				arith_uint256 gpu_arith = UintToArith256(gpu_hash);
 				bool gpu_meets_target = gpu_arith <= target;
 				std::cout << "  GPU hash meets target: " << (gpu_meets_target ? "YES" : "NO") << std::endl;
 			}
