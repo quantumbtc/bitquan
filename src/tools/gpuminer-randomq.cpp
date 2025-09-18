@@ -17,6 +17,7 @@
 #include "uint256.h"
 #include "arith_uint256.h"
 #include "serialize.h"
+#include "streams.h"
 
 #define CL_TARGET_OPENCL_VERSION 200
 #include <CL/cl.h>
