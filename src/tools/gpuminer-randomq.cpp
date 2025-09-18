@@ -164,11 +164,20 @@ static std::array<unsigned char,32> TargetFromBits(unsigned int nBits)
 
 int main(int argc, char* argv[])
 {
-    if (argc < 2) {
-        std::cerr << "Usage: gpuminer-randomq <kernel-path>\n";
-        return 1;
+    // Parse optional --kernel/-k argument; ignore other flags like -verify, -gpu
+    std::string kernel_path;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.rfind("--kernel=", 0) == 0) {
+            kernel_path = arg.substr(std::string("--kernel=").size());
+        } else if (arg == "-k" && i + 1 < argc) {
+            kernel_path = argv[++i];
+        }
     }
-    std::string kernel_path = argv[1]; // 例如 src/opencl/randomq_kernel_full.cl
+    // Default kernel path if not provided or user passed only flags
+    if (kernel_path.empty()) {
+        kernel_path = "src/tools/randomq_kernel.cl";
+    }
 
     try {
         GpuMinerContext gctx;
