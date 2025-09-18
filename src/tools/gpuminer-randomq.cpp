@@ -16,7 +16,9 @@
 #include "primitives/block.h"
 #include "uint256.h"
 #include "arith_uint256.h"
+#include "serialize.h"
 
+#define CL_TARGET_OPENCL_VERSION 200
 #include <CL/cl.h>
 
 /* ============================================================
@@ -61,7 +63,11 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     gctx.ctx = clCreateContext(nullptr, 1, &gctx.device, nullptr, nullptr, &err);
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create OpenCL context");
 
+    #if defined(CL_VERSION_2_0)
+    gctx.queue = clCreateCommandQueueWithProperties(gctx.ctx, gctx.device, nullptr, &err);
+    #else
     gctx.queue = clCreateCommandQueue(gctx.ctx, gctx.device, 0, &err);
+    #endif
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create OpenCL queue");
 
     std::string src = LoadKernelSource(kernel_path);
