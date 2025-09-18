@@ -29,13 +29,44 @@
    3. 将区块头、target、nonce 传入 GPU 并启动计算
    ============================================================ */
 
-static std::string LoadKernelSource(const std::string& path)
+static std::string LoadKernelSource(const std::string& primary_path)
 {
-    std::ifstream file(path, std::ios::in | std::ios::binary);
-    if (!file) throw std::runtime_error("Failed to open kernel source: " + path);
-    std::ostringstream contents;
-    contents << file.rdbuf();
-    return contents.str();
+    // Try explicit path first
+    auto try_read = [](const std::string& p) -> std::optional<std::string> {
+        std::ifstream f(p, std::ios::in | std::ios::binary);
+        if (!f) return std::nullopt;
+        std::ostringstream oss; oss << f.rdbuf();
+        return oss.str();
+    };
+
+    // Candidate search order
+    std::vector<std::string> candidates;
+    if (!primary_path.empty()) candidates.push_back(primary_path);
+
+    // Environment override
+    if (const char* env = std::getenv("BTQ_OPENCL_KERNEL")) {
+        candidates.emplace_back(env);
+    }
+
+    // Common relative paths
+    candidates.emplace_back("randomq_kernel.cl");
+    candidates.emplace_back("./randomq_kernel.cl");
+    candidates.emplace_back("src/tools/randomq_kernel.cl");
+    candidates.emplace_back("../src/tools/randomq_kernel.cl");
+    candidates.emplace_back("../../src/tools/randomq_kernel.cl");
+
+    for (const auto& p : candidates) {
+        if (auto s = try_read(p)) return *s;
+    }
+
+    std::ostringstream msg;
+    msg << "Failed to open kernel source. Tried: ";
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        if (i) msg << ", ";
+        msg << candidates[i];
+    }
+    msg << ". Use --kernel=PATH or set BTQ_OPENCL_KERNEL.";
+    throw std::runtime_error(msg.str());
 }
 
 struct GpuMinerContext {
