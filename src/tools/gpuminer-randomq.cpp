@@ -71,6 +71,7 @@ namespace OpenCLMining {
     cl_command_queue queue = nullptr;
     cl_program program = nullptr;
     cl_kernel kernel = nullptr;
+    cl_kernel debug_kernel = nullptr;
     cl_mem header_buffer = nullptr;
     cl_mem nonce_buffer = nullptr;
     cl_mem result_buffer = nullptr;
@@ -608,11 +609,18 @@ __kernel void randomq_mining(
             return false;
         }
         
-        tfm::format(std::cout, "[GPU] Creating kernel object...\n");
+        tfm::format(std::cout, "[GPU] Creating kernel objects...\n");
         std::cout.flush();
         kernel = clCreateKernel(program, "randomq_mining", &err);
         if (err != CL_SUCCESS) {
-            tfm::format(std::cout, "[GPU] ERROR: Failed to create kernel (error: %d)\n", err);
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create mining kernel (error: %d)\n", err);
+            std::cout.flush();
+            return false;
+        }
+        
+        debug_kernel = clCreateKernel(program, "randomq_debug", &err);
+        if (err != CL_SUCCESS) {
+            tfm::format(std::cout, "[GPU] ERROR: Failed to create debug kernel (error: %d)\n", err);
             std::cout.flush();
             return false;
         }
@@ -632,6 +640,7 @@ __kernel void randomq_mining(
         
 #ifdef OPENCL_FOUND
         if (kernel) clReleaseKernel(kernel);
+        if (debug_kernel) clReleaseKernel(debug_kernel);
         if (program) clReleaseProgram(program);
         if (header_buffer) clReleaseMemObject(header_buffer);
         if (nonce_buffer) clReleaseMemObject(nonce_buffer);
@@ -646,6 +655,101 @@ __kernel void randomq_mining(
         initialized = false;
     }
     
+    bool DebugSpecificNonce(const CBlockHeader& block, uint32_t test_nonce, std::string& result_hash_hex, 
+                           std::string& first_sha_hex, std::string& randomq_out_hex) {
+        if (!initialized) return false;
+        
+#ifdef OPENCL_FOUND
+        std::lock_guard<std::mutex> lock(opencl_mutex);
+        cl_int err;
+        
+        // Serialize block header to 80 bytes
+        std::vector<unsigned char> header_bytes;
+        VectorWriter stream(header_bytes, 0, block);
+        if (header_bytes.size() != 80) {
+            tfm::format(std::cout, "[GPU] ERROR: Header size is %zu, expected 80\n", header_bytes.size());
+            return false;
+        }
+        
+        // Create buffers for debug kernel
+        cl_mem debug_header_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+                                                   80, header_bytes.data(), &err);
+        if (err != CL_SUCCESS) return false;
+        
+        cl_mem debug_nonce_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+                                                  sizeof(uint32_t), &test_nonce, &err);
+        if (err != CL_SUCCESS) {
+            clReleaseMemObject(debug_header_buffer);
+            return false;
+        }
+        
+        cl_mem debug_hash_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
+        cl_mem debug_first_sha_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
+        cl_mem debug_randomq_out_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, 32, nullptr, &err);
+        
+        if (err != CL_SUCCESS) {
+            clReleaseMemObject(debug_header_buffer);
+            clReleaseMemObject(debug_nonce_buffer);
+            return false;
+        }
+        
+        // Set kernel arguments
+        err = clSetKernelArg(debug_kernel, 0, sizeof(cl_mem), &debug_header_buffer);
+        err |= clSetKernelArg(debug_kernel, 1, sizeof(cl_mem), &debug_nonce_buffer);
+        err |= clSetKernelArg(debug_kernel, 2, sizeof(cl_mem), &debug_hash_buffer);
+        err |= clSetKernelArg(debug_kernel, 3, sizeof(cl_mem), &debug_first_sha_buffer);
+        err |= clSetKernelArg(debug_kernel, 4, sizeof(cl_mem), &debug_randomq_out_buffer);
+        
+        if (err != CL_SUCCESS) {
+            clReleaseMemObject(debug_header_buffer);
+            clReleaseMemObject(debug_nonce_buffer);
+            clReleaseMemObject(debug_hash_buffer);
+            clReleaseMemObject(debug_first_sha_buffer);
+            clReleaseMemObject(debug_randomq_out_buffer);
+            return false;
+        }
+        
+        // Execute debug kernel
+        size_t global_work_size = 1;
+        err = clEnqueueNDRangeKernel(queue, debug_kernel, 1, nullptr, &global_work_size, nullptr, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            clReleaseMemObject(debug_header_buffer);
+            clReleaseMemObject(debug_nonce_buffer);
+            clReleaseMemObject(debug_hash_buffer);
+            clReleaseMemObject(debug_first_sha_buffer);
+            clReleaseMemObject(debug_randomq_out_buffer);
+            return false;
+        }
+        
+        clFinish(queue);
+        
+        // Read results
+        unsigned char final_hash[32];
+        unsigned char first_sha[32];
+        unsigned char randomq_out[32];
+        
+        err = clEnqueueReadBuffer(queue, debug_hash_buffer, CL_TRUE, 0, 32, final_hash, 0, nullptr, nullptr);
+        err |= clEnqueueReadBuffer(queue, debug_first_sha_buffer, CL_TRUE, 0, 32, first_sha, 0, nullptr, nullptr);
+        err |= clEnqueueReadBuffer(queue, debug_randomq_out_buffer, CL_TRUE, 0, 32, randomq_out, 0, nullptr, nullptr);
+        
+        // Convert to hex strings
+        result_hash_hex = HexStr(final_hash, final_hash + 32);
+        first_sha_hex = HexStr(first_sha, first_sha + 32);
+        randomq_out_hex = HexStr(randomq_out, randomq_out + 32);
+        
+        // Cleanup
+        clReleaseMemObject(debug_header_buffer);
+        clReleaseMemObject(debug_nonce_buffer);
+        clReleaseMemObject(debug_hash_buffer);
+        clReleaseMemObject(debug_first_sha_buffer);
+        clReleaseMemObject(debug_randomq_out_buffer);
+        
+        return err == CL_SUCCESS;
+#else
+        return false;
+#endif
+    }
+
     bool MineNonce(const CBlockHeader& block, uint32_t start_nonce, uint32_t& found_nonce, 
                    const arith_uint256& target, size_t work_size = 1024) {
         if (!initialized) return false;
@@ -1529,104 +1633,65 @@ bool VerifyGenesisBlock() {
 	}
 	std::cout << " ✅ SUCCESS" << std::endl;
 	
-	// Test GPU algorithm with multiple approaches
-	std::cout << "\n⚙️ GPU RandomQ Algorithm Test:" << std::endl;
+	// Direct debug test: GPU computes hash for exact genesis nonce
+	std::cout << "\n⚙️ GPU Direct Hash Computation Test:" << std::endl;
+	std::cout << "  Computing hash for nonce " << genesis_header.nNonce << " (genesis nonce)..." << std::endl;
 	
-	// Test 1: Try to find the exact nonce with a small range
-	std::cout << "  Test 1: Mining small range around known nonce..." << std::endl;
-	uint32_t test_start = genesis_header.nNonce - 10;  // Start 10 before known nonce
-	uint32_t found_nonce = 0;
-	
+	std::string gpu_hash_hex, first_sha_hex, randomq_out_hex;
 	auto gpu_start = std::chrono::high_resolution_clock::now();
-	bool gpu_found = OpenCLMining::MineNonce(genesis_header, test_start, found_nonce, target, 32); // work_size=32
+	bool debug_success = OpenCLMining::DebugSpecificNonce(genesis_header, genesis_header.nNonce, 
+	                                                      gpu_hash_hex, first_sha_hex, randomq_out_hex);
 	auto gpu_end = std::chrono::high_resolution_clock::now();
 	auto gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(gpu_end - gpu_start);
 	
 	std::cout << "  GPU Execution Time: " << gpu_duration.count() << " μs" << std::endl;
-	std::cout << "  GPU Found Solution: " << (gpu_found ? "YES" : "NO") << std::endl;
+	std::cout << "  Debug Execution: " << (debug_success ? "SUCCESS" : "FAILED") << std::endl;
 	
-	if (gpu_found) {
-		std::cout << "  Found Nonce: " << found_nonce << " (expected: " << genesis_header.nNonce << ")" << std::endl;
+	if (debug_success) {
+		std::cout << "\n🔍 GPU Algorithm Step-by-Step Results:" << std::endl;
+		std::cout << "  Input Nonce: " << genesis_header.nNonce << std::endl;
+		std::cout << "  Step 1 - SHA256(header): " << first_sha_hex << std::endl;
+		std::cout << "  Step 2 - RandomQ output: " << randomq_out_hex << std::endl;
+		std::cout << "  Step 3 - Final SHA256:   " << gpu_hash_hex << std::endl;
+		std::cout << "  Expected Final Hash:     " << EXPECTED_HASH << std::endl;
 		
-		if (found_nonce == genesis_header.nNonce) {
+		bool hash_matches = (gpu_hash_hex == EXPECTED_HASH);
+		std::cout << "\n📊 Verification Results:" << std::endl;
+		std::cout << "  GPU Hash Match: " << (hash_matches ? "✅ PASS" : "❌ FAIL") << std::endl;
+		
+		if (hash_matches) {
 			std::cout << "\n🏁 GPU Verification Result:" << std::endl;
-			std::cout << "🎉 SUCCESS: GPU RandomQ algorithm is CORRECT!" << std::endl;
-			std::cout << "✅ GPU found the exact expected nonce" << std::endl;
-			std::cout << "✅ This proves GPU algorithm matches CPU algorithm perfectly" << std::endl;
+			std::cout << "🎉 SUCCESS: GPU RandomQ algorithm is PERFECT!" << std::endl;
+			std::cout << "✅ GPU produces the exact expected hash for genesis nonce" << std::endl;
+			std::cout << "✅ GPU algorithm matches CPU algorithm completely" << std::endl;
 			return true;
 		} else {
-			// Verify the GPU found nonce produces a valid hash
-			CBlockHeader test_header = genesis_header;
-			test_header.nNonce = found_nonce;
-			uint256 gpu_hash = test_header.GetHash();
-			arith_uint256 gpu_arith = UintToArith256(gpu_hash);
-			bool meets_target = gpu_arith <= target;
-			
-			std::cout << "  GPU Hash: " << gpu_hash.GetHex() << std::endl;
-			std::cout << "  Meets Target: " << (meets_target ? "YES" : "NO") << std::endl;
-			
-			if (meets_target) {
-				std::cout << "\n🏁 GPU Verification Result:" << std::endl;
-				std::cout << "🎉 SUCCESS: GPU RandomQ algorithm is WORKING!" << std::endl;
-				std::cout << "✅ GPU found a valid solution (different nonce but correct difficulty)" << std::endl;
-				std::cout << "✅ This proves GPU algorithm is functionally correct" << std::endl;
-				return true;
-			}
-		}
-	}
-	
-	// Test 2: Try a larger range to see if GPU can find any valid solution
-	std::cout << "\n  Test 2: Mining larger range to test GPU capability..." << std::endl;
-	uint32_t large_start = genesis_header.nNonce - 1000;
-	found_nonce = 0;
-	
-	gpu_start = std::chrono::high_resolution_clock::now();
-	gpu_found = OpenCLMining::MineNonce(genesis_header, large_start, found_nonce, target, 2048); // work_size=2048
-	gpu_end = std::chrono::high_resolution_clock::now();
-	gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(gpu_end - gpu_start);
-	
-	std::cout << "  GPU Execution Time: " << gpu_duration.count() << " μs" << std::endl;
-	std::cout << "  GPU Found Solution: " << (gpu_found ? "YES" : "NO") << std::endl;
-	
-	if (gpu_found) {
-		std::cout << "  Found Nonce: " << found_nonce << std::endl;
-		
-		// Verify this solution
-		CBlockHeader test_header = genesis_header;
-		test_header.nNonce = found_nonce;
-		uint256 gpu_hash = test_header.GetHash();
-		arith_uint256 gpu_arith = UintToArith256(gpu_hash);
-		bool meets_target = gpu_arith <= target;
-		
-		std::cout << "  GPU Hash: " << gpu_hash.GetHex() << std::endl;
-		std::cout << "  Meets Target: " << (meets_target ? "YES" : "NO") << std::endl;
-		
-		if (meets_target) {
 			std::cout << "\n🏁 GPU Verification Result:" << std::endl;
-			std::cout << "🎉 SUCCESS: GPU RandomQ algorithm is WORKING!" << std::endl;
-			std::cout << "✅ GPU can find valid solutions that meet the difficulty target" << std::endl;
-			std::cout << "✅ GPU algorithm is functionally correct" << std::endl;
+			std::cout << "❌ FAILURE: GPU produces different hash than expected" << std::endl;
+			std::cout << "🔧 GPU kernel has algorithmic differences from CPU" << std::endl;
 			
-			if (found_nonce == genesis_header.nNonce) {
-				std::cout << "✅ BONUS: GPU found the exact expected nonce!" << std::endl;
+			// Detailed byte-by-byte comparison
+			std::cout << "\n🔍 Byte-by-byte Hash Comparison:" << std::endl;
+			for (int i = 0; i < 32; ++i) {
+				char gpu_byte_str[3], expected_byte_str[3];
+				strncpy(gpu_byte_str, gpu_hash_hex.substr(i*2, 2).c_str(), 2);
+				gpu_byte_str[2] = '\0';
+				strncpy(expected_byte_str, EXPECTED_HASH.substr(i*2, 2).c_str(), 2);
+				expected_byte_str[2] = '\0';
+				
+				bool byte_match = (strcmp(gpu_byte_str, expected_byte_str) == 0);
+				std::cout << "  Byte " << std::setw(2) << i << ": " << gpu_byte_str 
+					<< (byte_match ? " == " : " != ") << expected_byte_str 
+					<< (byte_match ? " ✅" : " ❌") << std::endl;
 			}
-			return true;
+			return false;
 		}
+	} else {
+		std::cout << "\n🏁 GPU Verification Result:" << std::endl;
+		std::cout << "❌ FAILURE: GPU debug kernel execution failed" << std::endl;
+		std::cout << "🔧 Check OpenCL kernel compilation and buffer management" << std::endl;
+		return false;
 	}
-	
-	// If we get here, GPU couldn't find any valid solution
-	std::cout << "\n🏁 GPU Verification Result:" << std::endl;
-	std::cout << "❌ FAILURE: GPU RandomQ algorithm has issues" << std::endl;
-	std::cout << "✅ CPU algorithm is verified correct" << std::endl;
-	std::cout << "❌ GPU cannot find valid solutions that meet the difficulty target" << std::endl;
-	std::cout << "🔧 GPU kernel implementation needs debugging" << std::endl;
-	std::cout << "\n🔍 Debugging suggestions:" << std::endl;
-	std::cout << "  1. Check if GPU kernel RandomQ implementation matches CPU" << std::endl;
-	std::cout << "  2. Verify GPU kernel is finding solutions at all" << std::endl;
-	std::cout << "  3. Compare GPU and CPU hash outputs for the same input" << std::endl;
-	std::cout << "  4. Check OpenCL kernel compilation and execution" << std::endl;
-	
-	return false;
 }
 
 int main(int argc, char* argv[])
