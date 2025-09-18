@@ -23,6 +23,9 @@
 #include <streams.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <chrono>
+#include <sstream>
+#include <iomanip>
 
 #ifdef WIN32
 #include <windows.h>
@@ -1428,6 +1431,206 @@ static void MinerLoop()
 	}
 }
 
+// Helper function to print hex data
+std::string FormatHex(const unsigned char* data, size_t len) {
+	std::ostringstream oss;
+	for (size_t i = 0; i < len; ++i) {
+		oss << std::hex << std::setfill('0') << std::setw(2) << (unsigned int)data[i];
+		if ((i + 1) % 16 == 0 && i + 1 < len) oss << "\n                    ";
+		else if ((i + 1) % 4 == 0 && i + 1 < len) oss << " ";
+	}
+	return oss.str();
+}
+
+// Genesis block verification function with detailed debugging
+bool VerifyGenesisBlock() {
+	std::cout << "\n🔍 === Genesis Block Verification (Debug Mode) ===" << std::endl;
+	
+	// Genesis block parameters from chainparams.cpp
+	const uint32_t GENESIS_TIME = 1756857263;
+	const uint32_t GENESIS_NONCE = 1379716;
+	const uint32_t GENESIS_BITS = 0x1e0ffff0;
+	const int32_t GENESIS_VERSION = 1;
+	const std::string EXPECTED_HASH = "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f";
+	const std::string EXPECTED_MERKLE = "b0e14069031ce67080e53fe3d2cdbc23d0949fd85efac43e67ffdcf07d66d541";
+	
+	std::cout << "\n📋 Genesis Block Parameters:" << std::endl;
+	std::cout << "  Version: " << GENESIS_VERSION << " (0x" << std::hex << GENESIS_VERSION << std::dec << ")" << std::endl;
+	std::cout << "  Time: " << GENESIS_TIME << " (0x" << std::hex << GENESIS_TIME << std::dec << ")" << std::endl;
+	std::cout << "  Nonce: " << GENESIS_NONCE << " (0x" << std::hex << GENESIS_NONCE << std::dec << ")" << std::endl;
+	std::cout << "  Bits: 0x" << std::hex << GENESIS_BITS << std::dec << std::endl;
+	std::cout << "  Expected Merkle: " << EXPECTED_MERKLE << std::endl;
+	std::cout << "  Expected Hash: " << EXPECTED_HASH << std::endl;
+	
+	// Create genesis block header (80 bytes)
+	std::cout << "\n🔧 Building Block Header (80 bytes):" << std::endl;
+	unsigned char header[80];
+	memset(header, 0, 80);
+	
+	// Version (4 bytes, little-endian)
+	uint32_t version = GENESIS_VERSION;
+	memcpy(header + 0, &version, 4);
+	std::cout << "  [0-3] Version: " << FormatHex(header + 0, 4) << std::endl;
+	
+	// Previous block hash (32 bytes) - all zeros for genesis
+	std::cout << "  [4-35] PrevHash: " << FormatHex(header + 4, 32) << std::endl;
+	
+	// Merkle root (32 bytes) - convert from hex and reverse for little-endian
+	auto merkle_opt = uint256::FromHex(EXPECTED_MERKLE);
+	if (!merkle_opt) {
+		std::cout << "❌ Failed to parse expected merkle root" << std::endl;
+		return false;
+	}
+	std::vector<unsigned char> merkle_bytes(merkle_opt->begin(), merkle_opt->end());
+	std::cout << "  [36-67] Merkle (big-endian): " << FormatHex(merkle_bytes.data(), 32) << std::endl;
+	std::reverse(merkle_bytes.begin(), merkle_bytes.end()); // Convert to little-endian
+	memcpy(header + 36, merkle_bytes.data(), 32);
+	std::cout << "  [36-67] Merkle (little-endian): " << FormatHex(header + 36, 32) << std::endl;
+	
+	// Time (4 bytes, little-endian)
+	uint32_t time = GENESIS_TIME;
+	memcpy(header + 68, &time, 4);
+	std::cout << "  [68-71] Time: " << FormatHex(header + 68, 4) << std::endl;
+	
+	// Bits (4 bytes, little-endian)
+	uint32_t bits = GENESIS_BITS;
+	memcpy(header + 72, &bits, 4);
+	std::cout << "  [72-75] Bits: " << FormatHex(header + 72, 4) << std::endl;
+	
+	// Nonce (4 bytes, little-endian)
+	uint32_t nonce = GENESIS_NONCE;
+	memcpy(header + 76, &nonce, 4);
+	std::cout << "  [76-79] Nonce: " << FormatHex(header + 76, 4) << std::endl;
+	
+	// Print complete header
+	std::cout << "\n📝 Complete Header (80 bytes):" << std::endl;
+	std::cout << "  " << FormatHex(header, 80) << std::endl;
+	
+	// Compute target from bits
+	arith_uint256 target; bool neg=false, of=false;
+	target.SetCompact(GENESIS_BITS, &neg, &of);
+	std::cout << "\n🎯 Target Analysis:" << std::endl;
+	std::cout << "  Bits: 0x" << std::hex << GENESIS_BITS << std::dec << std::endl;
+	std::cout << "  Target: " << target.GetHex() << std::endl;
+	std::cout << "  Difficulty: ~" << (arith_uint256().SetCompact(0x1d00ffff) / target).GetLow64() << std::endl;
+	
+	// Compute RandomQ hash using CPU
+	std::cout << "\n⚙️ CPU RandomQ Hash Computation:" << std::endl;
+	std::cout << "  Computing RandomQ hash..." << std::flush;
+	auto start_time = std::chrono::high_resolution_clock::now();
+	uint256 computed_hash = RandomQHash(header);
+	auto end_time = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+	std::cout << " Done! (" << duration.count() << " μs)" << std::endl;
+	
+	std::string computed_hex = computed_hash.GetHex();
+	std::cout << "  Computed: " << computed_hex << std::endl;
+	std::cout << "  Expected: " << EXPECTED_HASH << std::endl;
+	
+	bool cpu_matches = (computed_hex == EXPECTED_HASH);
+	std::cout << "  CPU Match: " << (cpu_matches ? "✅ PASS" : "❌ FAIL") << std::endl;
+	
+	if (!cpu_matches) {
+		std::cout << "\n🔍 Hash Comparison (byte by byte):" << std::endl;
+		for (size_t i = 0; i < 32; ++i) {
+			unsigned char computed_byte = computed_hash.begin()[31-i]; // Reverse for display
+			unsigned char expected_byte;
+			sscanf(EXPECTED_HASH.substr(i*2, 2).c_str(), "%02hhx", &expected_byte);
+			
+			if (computed_byte != expected_byte) {
+				std::cout << "  Byte " << std::setw(2) << i << ": " 
+					<< std::hex << std::setfill('0') << std::setw(2) << (int)computed_byte 
+					<< " != " << std::setw(2) << (int)expected_byte << " ❌" << std::dec << std::endl;
+			} else {
+				std::cout << "  Byte " << std::setw(2) << i << ": " 
+					<< std::hex << std::setfill('0') << std::setw(2) << (int)computed_byte 
+					<< " == " << std::setw(2) << (int)expected_byte << " ✅" << std::dec << std::endl;
+			}
+		}
+	}
+	
+	// Check if hash meets target
+	arith_uint256 computed_arith;
+	computed_arith.SetHex(computed_hex);
+	bool meets_target = computed_arith <= target;
+	std::cout << "  Meets Target: " << (meets_target ? "✅ YES" : "❌ NO") << std::endl;
+	
+	// Test GPU if available
+	if (gArgs.GetBoolArg("-gpu", false)) {
+		std::cout << "\n🖥️ GPU Algorithm Testing:" << std::endl;
+		
+		// Initialize GPU if needed
+		std::cout << "  Initializing OpenCL..." << std::flush;
+		if (!OpenCLMining::Initialize()) {
+			std::cout << " ❌ FAILED" << std::endl;
+			std::cout << "❌ Failed to initialize OpenCL for GPU test" << std::endl;
+			return cpu_matches;
+		}
+		std::cout << " ✅ SUCCESS" << std::endl;
+		
+		// Test single nonce with GPU
+		std::cout << "  Testing with known nonce " << GENESIS_NONCE << "..." << std::endl;
+		
+		uint32_t found_nonce = 0;
+		auto gpu_start = std::chrono::high_resolution_clock::now();
+		bool gpu_found = OpenCLMining::MineNonce(header, GENESIS_NONCE, target.GetCompact(), found_nonce);
+		auto gpu_end = std::chrono::high_resolution_clock::now();
+		auto gpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(gpu_end - gpu_start);
+		
+		std::cout << "  GPU Execution Time: " << gpu_duration.count() << " μs" << std::endl;
+		std::cout << "  GPU Found Solution: " << (gpu_found ? "YES" : "NO") << std::endl;
+		
+		if (gpu_found) {
+			std::cout << "  Found Nonce: " << found_nonce << std::endl;
+			std::cout << "  Expected Nonce: " << GENESIS_NONCE << std::endl;
+			
+			if (found_nonce == GENESIS_NONCE) {
+				std::cout << "  GPU Match: ✅ PASS (found expected nonce)" << std::endl;
+			} else {
+				std::cout << "  GPU Match: ❌ FAIL (nonce mismatch)" << std::endl;
+				
+				// Test the found nonce with CPU to see what hash it produces
+				unsigned char test_header[80];
+				memcpy(test_header, header, 80);
+				memcpy(test_header + 76, &found_nonce, 4);
+				uint256 gpu_hash = RandomQHash(test_header);
+				std::cout << "  GPU nonce " << found_nonce << " produces hash: " << gpu_hash.GetHex() << std::endl;
+				
+				arith_uint256 gpu_arith;
+				gpu_arith.SetHex(gpu_hash.GetHex());
+				bool gpu_meets_target = gpu_arith <= target;
+				std::cout << "  GPU hash meets target: " << (gpu_meets_target ? "YES" : "NO") << std::endl;
+			}
+		} else {
+			std::cout << "  GPU Match: ❌ FAIL (no solution found)" << std::endl;
+		}
+		
+		// Performance comparison
+		if (cpu_matches && gpu_found && found_nonce == GENESIS_NONCE) {
+			std::cout << "\n📊 Performance Comparison:" << std::endl;
+			std::cout << "  CPU Time: " << duration.count() << " μs" << std::endl;
+			std::cout << "  GPU Time: " << gpu_duration.count() << " μs" << std::endl;
+			std::cout << "  Speed Ratio: " << (double)duration.count() / gpu_duration.count() << "x" << std::endl;
+		}
+	}
+	
+	// Final result
+	std::cout << "\n🏁 Final Verification Result:" << std::endl;
+	if (cpu_matches) {
+		std::cout << "🎉 SUCCESS: RandomQ algorithm is CORRECT!" << std::endl;
+		std::cout << "✅ CPU algorithm produces the expected genesis block hash" << std::endl;
+		if (gArgs.GetBoolArg("-gpu", false)) {
+			std::cout << "✅ GPU algorithm validation completed" << std::endl;
+		}
+	} else {
+		std::cout << "💥 FAILURE: RandomQ algorithm has ISSUES!" << std::endl;
+		std::cout << "❌ The computed hash does not match the expected genesis hash" << std::endl;
+		std::cout << "🔧 Please check the RandomQ implementation" << std::endl;
+	}
+	
+	return cpu_matches;
+}
+
 int main(int argc, char* argv[])
 {
 	// Print startup banner
@@ -1474,6 +1677,13 @@ int main(int argc, char* argv[])
 		if (!gArgs.ParseParameters(argc, argv, error)) {
 			if (error != "") tfm::format(std::cerr, "Error parsing command line: %s\n", error);
 			return EXIT_FAILURE;
+		}
+
+		// Check for verification mode
+		if (gArgs.GetBoolArg("-verify", false)) {
+			std::cout << "[Mode] Running in verification mode..." << std::endl;
+			bool success = VerifyGenesisBlock();
+			return success ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 
 		// Print parsed configuration

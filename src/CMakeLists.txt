@@ -407,6 +407,18 @@ else()
   message(STATUS "OpenCL not found, skipping gpuminer-randomq")
 endif()
 
+# Genesis block verification tool
+add_executable(verify-genesis
+  tools/verify-genesis.cpp
+)
+target_link_libraries(verify-genesis
+  PRIVATE
+    core_interface
+    bitquantum_common
+    bitquantum_util
+)
+install_binary_component(verify-genesis)
+
 
 if(BUILD_TX)
   add_executable(bitquantum-tx bitquantum-tx.cpp)
