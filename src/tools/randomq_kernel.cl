@@ -141,7 +141,8 @@ typedef struct {
 } CRANDOMQ_CTX;
 
 inline void CRandomQ_Reset(__private CRANDOMQ_CTX* ctx) {
-    for (int i = 0; i < 25; ++i) ctx->state[i] = (ulong)0;
+    // Initialize state with constants (like CPU version)
+    for (int i = 0; i < 25; ++i) ctx->state[i] = RANDOMQ_CONSTANTS[i];
     ctx->nonce = (ulong)0;
     ctx->rounds = (ulong)8192;
 }
@@ -243,22 +244,14 @@ __kernel void randomq_mining(
     local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
     local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
 
-    // Step 1: first SHA256(header)
-    __private uchar first_sha[32];
-    sha256_general(local_header, 80u, first_sha); // produces standard big-endian SHA bytes
-
-    // Step 2: CRandomQ: Reset, set rounds/nonce, write first_sha, finalize -> randomq_out (32 bytes)
+    // Direct RandomQ hash (like CPU version): RandomQ(header) -> hash
     CRANDOMQ_CTX ctx;
     CRandomQ_Reset(&ctx);
     CRandomQ_SetRounds(&ctx, (ulong)8192);
     CRandomQ_SetNonce(&ctx, current_nonce);
-    CRandomQ_Write(&ctx, first_sha, 32u); // note: first_sha is 32 bytes
-    __private uchar randomq_out[32];
-    CRandomQ_Finalize(&ctx, randomq_out);
-
-    // Step 3: final SHA256(randomq_out)
+    CRandomQ_Write(&ctx, local_header, 80u); // Write header directly, not SHA256(header)
     __private uchar final32[32];
-    sha256_general(randomq_out, 32u, final32); // big-endian sha output
+    CRandomQ_Finalize(&ctx, final32); // This already does StateToHash with SHA256
 
     // Compare final32 (big-endian) with target32 (big-endian) MSB->LSB
     bool meets_target = true;
