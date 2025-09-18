@@ -141,8 +141,7 @@ typedef struct {
 } CRANDOMQ_CTX;
 
 inline void CRandomQ_Reset(__private CRANDOMQ_CTX* ctx) {
-    // Initialize state with constants (like CPU version)
-    for (int i = 0; i < 25; ++i) ctx->state[i] = RANDOMQ_CONSTANTS[i];
+    for (int i = 0; i < 25; ++i) ctx->state[i] = (ulong)0;
     ctx->nonce = (ulong)0;
     ctx->rounds = (ulong)8192;
 }
@@ -221,54 +220,8 @@ inline void CRandomQ_Finalize(__private CRANDOMQ_CTX* ctx, __private uchar out[3
     CRandomQ_StateToHash(ctx, out);
 }
 
-// ---------- Debug kernel for specific nonce testing ----------
-__kernel void randomq_debug(
-    __global const uchar* header80, // 80 bytes header (little-endian)
-    __global const uint* test_nonce, // specific nonce to test (1379716)
-    __global uchar* debug_hash, // 32 bytes output hash
-    __global uchar* debug_first_sha, // 32 bytes first SHA256 output
-    __global uchar* debug_randomq_out // 32 bytes RandomQ output
-) {
-    uint gid = get_global_id(0);
-    if (gid != 0) return; // Only first work item does the calculation
-    
-    ulong current_nonce = (ulong)(*test_nonce);
-
-    // build local header and inject nonce
-    __private uchar local_header[80];
-    for (int i = 0; i < 80; ++i) local_header[i] = header80[i];
-    // nonce in header bytes 76..79 little-endian
-    local_header[76] = (uchar)((current_nonce) & 0xFF);
-    local_header[77] = (uchar)((current_nonce >> 8) & 0xFF);
-    local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
-    local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
-
-    // Step 1: First SHA256(header)
-    __private uchar first_sha[32];
-    sha256_general(local_header, 80u, first_sha);
-    // Copy to debug output
-    for (int i = 0; i < 32; ++i) debug_first_sha[i] = first_sha[i];
-    
-    // Step 2: RandomQ(first_sha)
-    CRANDOMQ_CTX ctx;
-    CRandomQ_Reset(&ctx);
-    CRandomQ_SetRounds(&ctx, (ulong)8192);
-    CRandomQ_SetNonce(&ctx, current_nonce);
-    CRandomQ_Write(&ctx, first_sha, 32u);
-    __private uchar randomq_out[32];
-    CRandomQ_Finalize(&ctx, randomq_out);
-    // Copy to debug output
-    for (int i = 0; i < 32; ++i) debug_randomq_out[i] = randomq_out[i];
-    
-    // Step 3: Second SHA256(randomq_out)
-    __private uchar final32[32];
-    sha256_general(randomq_out, 32u, final32);
-    // Copy to debug output
-    for (int i = 0; i < 32; ++i) debug_hash[i] = final32[i];
-}
-
 // ---------- Mining kernel ----------
-__kernel void randomq_mining(
+__kernel void randomq_mining_full(
     __global const uchar* header80, // 80 bytes header (little-endian)
     __global const uint* nonce_base, // uint32 base nonce
     __global const uchar* target32, // 32 bytes target (big-endian)
@@ -290,24 +243,22 @@ __kernel void randomq_mining(
     local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
     local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
 
-    // Correct algorithm: SHA256 -> RandomQ -> SHA256 (like CRandomQHash)
-    
-    // Step 1: First SHA256(header)
+    // Step 1: first SHA256(header)
     __private uchar first_sha[32];
-    sha256_general(local_header, 80u, first_sha);
-    
-    // Step 2: RandomQ(first_sha)
+    sha256_general(local_header, 80u, first_sha); // produces standard big-endian SHA bytes
+
+    // Step 2: CRandomQ: Reset, set rounds/nonce, write first_sha, finalize -> randomq_out (32 bytes)
     CRANDOMQ_CTX ctx;
     CRandomQ_Reset(&ctx);
     CRandomQ_SetRounds(&ctx, (ulong)8192);
     CRandomQ_SetNonce(&ctx, current_nonce);
-    CRandomQ_Write(&ctx, first_sha, 32u); // Write SHA256 result, not header
+    CRandomQ_Write(&ctx, first_sha, 32u); // note: first_sha is 32 bytes
     __private uchar randomq_out[32];
-    CRandomQ_Finalize(&ctx, randomq_out); // This does StateToHash with SHA256 internally
-    
-    // Step 3: Second SHA256(randomq_out)
+    CRandomQ_Finalize(&ctx, randomq_out);
+
+    // Step 3: final SHA256(randomq_out)
     __private uchar final32[32];
-    sha256_general(randomq_out, 32u, final32);
+    sha256_general(randomq_out, 32u, final32); // big-endian sha output
 
     // Compare final32 (big-endian) with target32 (big-endian) MSB->LSB
     bool meets_target = true;
