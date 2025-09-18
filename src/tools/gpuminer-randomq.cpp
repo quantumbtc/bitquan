@@ -18,7 +18,6 @@
 #include <consensus/merkle.h>
 #include <chainparamsbase.h>
 #include <script/script.h>
-#include <script/standard.h>
 #include <consensus/amount.h>
 #include <support/events.h>
 #include <core_io.h>
