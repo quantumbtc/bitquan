@@ -794,6 +794,7 @@ static void SetupMinerArgs(ArgsManager& argsman)
 	argsman.AddArg("-worksize=<n>", "GPU work size (default: 1024)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-address=<bech32>", "Payout address for coinbase", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-maxtries=<n>", "Max nonce attempts before refreshing template (default: 1000000)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+	argsman.AddArg("-verify", "Run genesis block verification test", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
 // Minimal RPC client modeled after bitquantum-cli
