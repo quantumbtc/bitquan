@@ -385,12 +385,24 @@ target_link_libraries(cpuminer-randomq
 )
 install_binary_component(cpuminer-randomq)
 
-# Standalone RandomQ GPU miner (OpenCL)
-find_package(OpenCL QUIET)
-if(OpenCL_FOUND)
+# Standalone RandomQ GPU miner (CUDA for NVIDIA GPUs)
+find_package(CUDA QUIET)
+if(CUDA_FOUND)
+  # Enable CUDA language
+  enable_language(CUDA)
+  
+  # CUDA executable
   add_executable(gpuminer-randomq
     tools/gpuminer-randomq.cpp
+    tools/randomq_cuda_kernel.cu
   )
+  
+  # Set CUDA properties
+  set_target_properties(gpuminer-randomq PROPERTIES
+    CUDA_ARCHITECTURES "50;60;70;75;80;86;89;90"
+    CUDA_STANDARD 17
+  )
+  
   target_link_libraries(gpuminer-randomq
     PRIVATE
       core_interface
@@ -399,12 +411,24 @@ if(OpenCL_FOUND)
       bitquantum_util
       libevent::core
       libevent::extra
-      OpenCL::OpenCL
+      ${CUDA_LIBRARIES}
   )
-  target_compile_definitions(gpuminer-randomq PRIVATE OPENCL_FOUND)
+  
+  target_include_directories(gpuminer-randomq PRIVATE ${CUDA_INCLUDE_DIRS})
+  target_compile_definitions(gpuminer-randomq PRIVATE CUDA_FOUND)
   install_binary_component(gpuminer-randomq)
+  
+  message(STATUS "CUDA found, building NVIDIA GPU miner")
 else()
-  message(STATUS "OpenCL not found, skipping gpuminer-randomq")
+  message(STATUS "CUDA not found, skipping NVIDIA GPU miner")
+  
+  # Fallback to OpenCL version if available
+  find_package(OpenCL QUIET)
+  if(OpenCL_FOUND)
+    message(STATUS "OpenCL found, could build OpenCL GPU miner instead")
+  else()
+    message(STATUS "Neither CUDA nor OpenCL found, no GPU miner will be built")
+  endif()
 endif()
 
 
