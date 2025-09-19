@@ -96,13 +96,34 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     if (err != CL_SUCCESS || num_devices == 0)
         throw std::runtime_error("No OpenCL GPU device found");
 
+    // Print GPU device information
+    char device_name[256] = {0};
+    char device_vendor[256] = {0};
+    char driver_version[256] = {0};
+    cl_device_type device_type;
+    
+    clGetDeviceInfo(gctx.device, CL_DEVICE_NAME, sizeof(device_name), device_name, nullptr);
+    clGetDeviceInfo(gctx.device, CL_DEVICE_VENDOR, sizeof(device_vendor), device_vendor, nullptr);
+    clGetDeviceInfo(gctx.device, CL_DRIVER_VERSION, sizeof(driver_version), driver_version, nullptr);
+    clGetDeviceInfo(gctx.device, CL_DEVICE_TYPE, sizeof(device_type), &device_type, nullptr);
+    
+    std::cout << "[GPU] Device: " << device_name << std::endl;
+    std::cout << "[GPU] Vendor: " << device_vendor << std::endl;
+    std::cout << "[GPU] Driver: " << driver_version << std::endl;
+    std::cout << "[GPU] Type: ";
+    if (device_type & CL_DEVICE_TYPE_CPU) std::cout << "CPU ";
+    if (device_type & CL_DEVICE_TYPE_GPU) std::cout << "GPU ";
+    if (device_type & CL_DEVICE_TYPE_ACCELERATOR) std::cout << "ACCELERATOR ";
+    std::cout << std::endl;
+
     gctx.ctx = clCreateContext(nullptr, 1, &gctx.device, nullptr, nullptr, &err);
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create OpenCL context");
 
     #if defined(CL_VERSION_2_0)
-    gctx.queue = clCreateCommandQueueWithProperties(gctx.ctx, gctx.device, nullptr, &err);
+    cl_queue_properties props[] = {CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0};
+    gctx.queue = clCreateCommandQueueWithProperties(gctx.ctx, gctx.device, props, &err);
     #else
-    gctx.queue = clCreateCommandQueue(gctx.ctx, gctx.device, 0, &err);
+    gctx.queue = clCreateCommandQueue(gctx.ctx, gctx.device, CL_QUEUE_PROFILING_ENABLE, &err);
     #endif
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create OpenCL queue");
 
@@ -365,13 +386,30 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     }
     
     std::cout << "[DEBUG] Kernel enqueued successfully, waiting for completion..." << std::endl;
-    clFinish(gctx.queue);
     
-    // Check kernel execution status
+    // Check status before waiting
     cl_int exec_status;
     err = clGetEventInfo(kernel_event, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &exec_status, nullptr);
     if (err == CL_SUCCESS) {
-        std::cout << "[DEBUG] Kernel execution status: ";
+        std::cout << "[DEBUG] Initial kernel status: ";
+        switch(exec_status) {
+            case CL_QUEUED: std::cout << "CL_QUEUED"; break;
+            case CL_SUBMITTED: std::cout << "CL_SUBMITTED"; break;
+            case CL_RUNNING: std::cout << "CL_RUNNING"; break;
+            case CL_COMPLETE: std::cout << "CL_COMPLETE"; break;
+            default: std::cout << "Error status: " << exec_status; break;
+        }
+        std::cout << std::endl;
+    }
+    
+    std::cout << "[DEBUG] Calling clFinish..." << std::endl;
+    clFinish(gctx.queue);
+    std::cout << "[DEBUG] clFinish completed" << std::endl;
+    
+    // Check kernel execution status after clFinish
+    err = clGetEventInfo(kernel_event, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &exec_status, nullptr);
+    if (err == CL_SUCCESS) {
+        std::cout << "[DEBUG] Final kernel execution status: ";
         switch(exec_status) {
             case CL_QUEUED: std::cout << "CL_QUEUED"; break;
             case CL_SUBMITTED: std::cout << "CL_SUBMITTED"; break;
@@ -382,6 +420,17 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
         std::cout << std::endl;
     } else {
         std::cout << "[DEBUG] Failed to get kernel execution status: " << err << std::endl;
+    }
+    
+    // Get timing information if available
+    cl_ulong start_time = 0, end_time = 0;
+    err = clGetEventProfilingInfo(kernel_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start_time, nullptr);
+    if (err == CL_SUCCESS) {
+        err = clGetEventProfilingInfo(kernel_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end_time, nullptr);
+        if (err == CL_SUCCESS && end_time > start_time) {
+            double duration_ms = (end_time - start_time) / 1000000.0; // Convert nanoseconds to milliseconds
+            std::cout << "[DEBUG] Kernel execution time: " << duration_ms << " ms" << std::endl;
+        }
     }
     
     clReleaseEvent(kernel_event);
