@@ -180,7 +180,7 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
 }
 
 /**
- * 将 nBits 转换为 target（big-endian 字节序）
+ * 将 nBits 转换为 target（little-endian 字节序，与哈希比较一致）
  */
 static std::array<unsigned char,32> TargetFromBits(unsigned int nBits)
 {
@@ -190,8 +190,7 @@ static std::array<unsigned char,32> TargetFromBits(unsigned int nBits)
     uint256 t256 = ArithToUint256(target);
     std::array<unsigned char,32> out{};
     std::memcpy(out.data(), t256.begin(), 32);
-    // 转为 big-endian
-    std::reverse(out.begin(), out.end());
+    // 不转换字节序，保持 little-endian
     return out;
 }
 
@@ -266,20 +265,21 @@ static bool VerifyGenesisBlock()
         std::cout << "Found Nonce: " << found_nonce << " (expected: 1379716)" << std::endl;
         
         if (found) {
-            std::cout << "GPU Hash: ";
+            std::cout << "GPU Hash (LE): ";
             for (unsigned char b : gpu_hash) printf("%02x", b);
             std::cout << std::endl;
-            std::cout << "Expected: 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
-            // 比较哈希值
-            std::string gpu_hash_hex;
-            for (unsigned char b : gpu_hash) {
+            // 转换为大端序
+            std::string gpu_hash_be;
+            for (int i = 31; i >= 0; --i) {
                 char buf[3];
-                sprintf(buf, "%02x", b);
-                gpu_hash_hex += buf;
+                sprintf(buf, "%02x", gpu_hash[i]);
+                gpu_hash_be += buf;
             }
+            std::cout << "GPU Hash (BE): " << gpu_hash_be << std::endl;
+            std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
-            bool hash_matches = (gpu_hash_hex == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
+            bool hash_matches = (gpu_hash_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
             std::cout << "Hash Match: " << (hash_matches ? "✅ YES" : "❌ NO") << std::endl;
             
             if (found_nonce == 1379716 && hash_matches) {
@@ -299,7 +299,7 @@ static bool VerifyGenesisBlock()
         std::cout << "GPU Found Any Solution: " << (found ? "✅ YES" : "❌ NO") << std::endl;
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
-            std::cout << "GPU Hash: ";
+            std::cout << "GPU Hash (LE): ";
             for (unsigned char b : gpu_hash) printf("%02x", b);
             std::cout << std::endl;
         }
@@ -314,7 +314,7 @@ static bool VerifyGenesisBlock()
         std::cout << "Direct Test Result: " << (found ? "✅ FOUND" : "❌ NOT FOUND") << std::endl;
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
-            std::cout << "GPU Hash: ";
+            std::cout << "GPU Hash (LE): ";
             for (unsigned char b : gpu_hash) printf("%02x", b);
             std::cout << std::endl;
         }
@@ -338,19 +338,21 @@ static bool VerifyGenesisBlock()
             unsigned char cpu_hash[32];
             cpu_hasher.Finalize(std::span<unsigned char>(cpu_hash, 32));
             
-            std::cout << "CPU Hash: ";
+            std::cout << "CPU Hash (LE): ";
             for (unsigned char b : cpu_hash) printf("%02x", b);
             std::cout << std::endl;
-            std::cout << "Expected: 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
-            std::string cpu_hash_hex;
-            for (unsigned char b : cpu_hash) {
+            // 转换为大端序
+            std::string cpu_hash_be;
+            for (int i = 31; i >= 0; --i) {
                 char buf[3];
-                sprintf(buf, "%02x", b);
-                cpu_hash_hex += buf;
+                sprintf(buf, "%02x", cpu_hash[i]);
+                cpu_hash_be += buf;
             }
+            std::cout << "CPU Hash (BE): " << cpu_hash_be << std::endl;
+            std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
-            bool cpu_matches = (cpu_hash_hex == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
+            bool cpu_matches = (cpu_hash_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
             std::cout << "CPU Hash Match: " << (cpu_matches ? "✅ YES" : "❌ NO") << std::endl;
             
         } catch (const std::exception& e) {

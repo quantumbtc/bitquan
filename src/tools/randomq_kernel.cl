@@ -260,10 +260,16 @@ __kernel void randomq_mining_full(
     __private uchar final32[32];
     sha256_general(randomq_out, 32u, final32); // big-endian sha output
 
-    // Compare final32 (big-endian) with target32 (big-endian) MSB->LSB
-    bool meets_target = true;
+    // Convert final32 to little-endian for comparison
+    __private uchar final_le[32];
     for (int i = 0; i < 32; ++i) {
-        uchar hb = final32[i];
+        final_le[i] = final32[31 - i];
+    }
+
+    // Compare final_le (little-endian) with target32 (little-endian) LSB->MSB
+    bool meets_target = true;
+    for (int i = 31; i >= 0; --i) {
+        uchar hb = final_le[i];
         uchar tb = target32[i];
         if (hb > tb) { meets_target = false; break; }
         else if (hb < tb) break;
@@ -274,7 +280,7 @@ __kernel void randomq_mining_full(
         uint old = atomic_cmpxchg((volatile __global uint*)found_flag, 0u, 1u);
         if (old == 0u) {
             *found_nonce = (uint)current_nonce;
-            for (int i = 0; i < 32; ++i) result_hash[i] = final32[i];
+            for (int i = 0; i < 32; ++i) result_hash[i] = final_le[i];
         }
     }
 }
