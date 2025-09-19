@@ -298,21 +298,46 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     
     std::cout << "[DEBUG] Result buffer created with initial 0x99 pattern" << std::endl;
 
+    std::cout << "[DEBUG] Setting kernel arguments..." << std::endl;
     err = clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Failed to set kernel arg 0 (header): " << err << std::endl;
+        return false;
+    } else {
+        std::cout << "[DEBUG] Kernel arg 0 (header) set successfully" << std::endl;
     }
+    
     err = clSetKernelArg(gctx.debug_kernel, 1, sizeof(cl_mem), &nonce_buf);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Failed to set kernel arg 1 (nonce): " << err << std::endl;
+        return false;
+    } else {
+        std::cout << "[DEBUG] Kernel arg 1 (nonce) set successfully" << std::endl;
     }
+    
     err = clSetKernelArg(gctx.debug_kernel, 2, sizeof(cl_mem), &result_buf);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Failed to set kernel arg 2 (result): " << err << std::endl;
+        return false;
+    } else {
+        std::cout << "[DEBUG] Kernel arg 2 (result) set successfully" << std::endl;
     }
 
+    // Check work group size limits
+    size_t max_work_group_size = 0;
+    err = clGetKernelWorkGroupInfo(gctx.debug_kernel, gctx.device, CL_KERNEL_WORK_GROUP_SIZE, 
+                                   sizeof(size_t), &max_work_group_size, nullptr);
+    if (err == CL_SUCCESS) {
+        std::cout << "[DEBUG] Max work group size for debug kernel: " << max_work_group_size << std::endl;
+    } else {
+        std::cout << "[DEBUG] Failed to get work group info: " << err << std::endl;
+    }
+    
     size_t gws = 1;
-    err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
+    std::cout << "[DEBUG] About to enqueue debug kernel with work size: " << gws << std::endl;
+    
+    cl_event kernel_event;
+    err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, &kernel_event);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Kernel execution failed with error: " << err << std::endl;
         std::cout << "[DEBUG] Error details: ";
@@ -339,7 +364,27 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
         return false;
     }
     
+    std::cout << "[DEBUG] Kernel enqueued successfully, waiting for completion..." << std::endl;
     clFinish(gctx.queue);
+    
+    // Check kernel execution status
+    cl_int exec_status;
+    err = clGetEventInfo(kernel_event, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &exec_status, nullptr);
+    if (err == CL_SUCCESS) {
+        std::cout << "[DEBUG] Kernel execution status: ";
+        switch(exec_status) {
+            case CL_QUEUED: std::cout << "CL_QUEUED"; break;
+            case CL_SUBMITTED: std::cout << "CL_SUBMITTED"; break;
+            case CL_RUNNING: std::cout << "CL_RUNNING"; break;
+            case CL_COMPLETE: std::cout << "CL_COMPLETE"; break;
+            default: std::cout << "Error status: " << exec_status; break;
+        }
+        std::cout << std::endl;
+    } else {
+        std::cout << "[DEBUG] Failed to get kernel execution status: " << err << std::endl;
+    }
+    
+    clReleaseEvent(kernel_event);
 
     // Initialize output before reading
     out_hash.fill(0);
@@ -354,6 +399,77 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     clReleaseMemObject(result_buf);
 
     return (err == CL_SUCCESS);
+}
+
+/**
+ * Test ultra-simple kernel to verify basic GPU functionality
+ */
+static bool TestSimpleKernel(GpuMinerContext& gctx)
+{
+    std::cout << "[DEBUG] Testing ultra-simple kernel..." << std::endl;
+    
+    cl_int err;
+    cl_kernel simple_kernel = clCreateKernel(gctx.program, "simple_test", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to create simple test kernel: " << err << std::endl;
+        return false;
+    }
+    
+    // Create output buffer
+    unsigned char init_data[32];
+    for (int i = 0; i < 32; ++i) init_data[i] = 0x00;
+    
+    cl_mem output_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                       32, init_data, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to create output buffer: " << err << std::endl;
+        clReleaseKernel(simple_kernel);
+        return false;
+    }
+    
+    // Set kernel argument
+    err = clSetKernelArg(simple_kernel, 0, sizeof(cl_mem), &output_buf);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to set simple kernel arg: " << err << std::endl;
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(simple_kernel);
+        return false;
+    }
+    
+    // Execute kernel
+    size_t gws = 1;
+    err = clEnqueueNDRangeKernel(gctx.queue, simple_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to execute simple kernel: " << err << std::endl;
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(simple_kernel);
+        return false;
+    }
+    
+    clFinish(gctx.queue);
+    
+    // Read result
+    unsigned char result[32];
+    err = clEnqueueReadBuffer(gctx.queue, output_buf, CL_TRUE, 0, 32, result, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to read simple kernel result: " << err << std::endl;
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(simple_kernel);
+        return false;
+    }
+    
+    // Check result
+    bool success = (result[0] == 0xDE && result[1] == 0xAD && result[2] == 0xBE && result[3] == 0xEF);
+    std::cout << "[DEBUG] Simple kernel result: ";
+    for (int i = 0; i < 8; ++i) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)result[i] << " ";
+    }
+    std::cout << std::dec << std::endl;
+    std::cout << "[DEBUG] Simple kernel test: " << (success ? "PASSED" : "FAILED") << std::endl;
+    
+    clReleaseMemObject(output_buf);
+    clReleaseKernel(simple_kernel);
+    return success;
 }
 
 /**
@@ -557,8 +673,13 @@ static bool VerifyGenesisBlock()
             std::cout << "CPU Test Error: " << e.what() << std::endl;
         }
         
-        // 测试5：GPU 调试内核直接测试
-        std::cout << "\nTest 5: GPU debug kernel direct test..." << std::endl;
+        // 测试5：简单内核测试
+        std::cout << "\nTest 5: Simple kernel test..." << std::endl;
+        bool simple_test_passed = TestSimpleKernel(gctx);
+        std::cout << "Simple kernel test result: " << (simple_test_passed ? "PASSED" : "FAILED") << std::endl;
+        
+        // 测试6：GPU 调试内核直接测试
+        std::cout << "\nTest 6: GPU debug kernel direct test..." << std::endl;
         if (gctx.debug_kernel != nullptr) {
             std::cout << "[DEBUG] Debug kernel is available, attempting to run..." << std::endl;
             std::array<unsigned char,32> gpu_debug_hash{};

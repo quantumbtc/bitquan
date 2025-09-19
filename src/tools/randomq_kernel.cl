@@ -342,3 +342,14 @@ __kernel void randomq_debug_nonce(
     // For now, don't do the full computation - just test basic functionality
     // Once we confirm the kernel is executing, we can add the full RandomQ computation
 }
+
+// Ultra-simple test kernel to verify basic GPU functionality
+__kernel void simple_test(__global uchar* output) {
+    uint gid = get_global_id(0);
+    if (gid == 0) {
+        output[0] = 0xDE;
+        output[1] = 0xAD;
+        output[2] = 0xBE;
+        output[3] = 0xEF;
+    }
+}
