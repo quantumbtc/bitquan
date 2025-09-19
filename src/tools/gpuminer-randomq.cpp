@@ -81,7 +81,7 @@ struct GpuMinerContext {
     cl_kernel debug_kernel = nullptr;
 }; 
 
-static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
+static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path, bool force_cpu = false)
 {
     cl_int err;
     cl_uint num_platforms = 0;
@@ -90,14 +90,21 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     if (err != CL_SUCCESS || num_platforms == 0)
         throw std::runtime_error("No OpenCL platform found");
 
-    // Try GPU first, then fallback to CPU if GPU doesn't work
+    // Try GPU first, then fallback to CPU if GPU doesn't work or if forced
     cl_uint num_devices = 0;
-    err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &gctx.device, &num_devices);
-    if (err != CL_SUCCESS || num_devices == 0) {
-        std::cout << "[GPU] No GPU device found, trying CPU..." << std::endl;
+    if (force_cpu) {
+        std::cout << "[GPU] Forcing CPU OpenCL device..." << std::endl;
         err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &gctx.device, &num_devices);
         if (err != CL_SUCCESS || num_devices == 0)
-            throw std::runtime_error("No OpenCL device found");
+            throw std::runtime_error("No OpenCL CPU device found");
+    } else {
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &gctx.device, &num_devices);
+        if (err != CL_SUCCESS || num_devices == 0) {
+            std::cout << "[GPU] No GPU device found, trying CPU..." << std::endl;
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &gctx.device, &num_devices);
+            if (err != CL_SUCCESS || num_devices == 0)
+                throw std::runtime_error("No OpenCL device found");
+        }
     }
 
     // Print GPU device information
@@ -678,6 +685,24 @@ static CBlock CreateActualGenesisBlock()
 }
 
 /**
+ * Test if GPU/device is functional by running a simple test
+ */
+static bool TestDeviceFunctionality(GpuMinerContext& gctx)
+{
+    std::cout << "[GPU] Testing device functionality..." << std::endl;
+    
+    // Try the minimal kernel first
+    bool minimal_works = TestMinimalKernel(gctx);
+    if (minimal_works) {
+        std::cout << "[GPU] Device is functional (minimal kernel works)" << std::endl;
+        return true;
+    }
+    
+    std::cout << "[GPU] Device appears non-functional (minimal kernel failed)" << std::endl;
+    return false;
+}
+
+/**
  * 验证 GPU 算法是否正确
  */
 static bool VerifyGenesisBlock()
@@ -686,7 +711,39 @@ static bool VerifyGenesisBlock()
     
     try {
         GpuMinerContext gctx;
-        InitOpenCL(gctx, "src/tools/randomq_kernel.cl");
+        bool use_cpu = false;
+        
+        // First try GPU
+        try {
+            InitOpenCL(gctx, "src/tools/randomq_kernel.cl", false);
+            
+            // Test if the device actually works
+            if (!TestDeviceFunctionality(gctx)) {
+                std::cout << "[GPU] GPU device non-functional, switching to CPU..." << std::endl;
+                use_cpu = true;
+                
+                // Clean up failed GPU context
+                if (gctx.debug_kernel) clReleaseKernel(gctx.debug_kernel);
+                if (gctx.kernel) clReleaseKernel(gctx.kernel);
+                if (gctx.program) clReleaseProgram(gctx.program);
+                if (gctx.queue) clReleaseCommandQueue(gctx.queue);
+                if (gctx.ctx) clReleaseContext(gctx.ctx);
+                
+                // Reset context
+                gctx = GpuMinerContext{};
+            }
+        } catch (const std::exception& e) {
+            std::cout << "[GPU] GPU initialization failed: " << e.what() << std::endl;
+            std::cout << "[GPU] Switching to CPU..." << std::endl;
+            use_cpu = true;
+        }
+        
+        // Initialize CPU if needed
+        if (use_cpu) {
+            InitOpenCL(gctx, "src/tools/randomq_kernel.cl", true);
+        }
+        
+        std::cout << "\n=== Using " << (use_cpu ? "CPU" : "GPU") << " device for mining tests ===" << std::endl;
         
         // 创建实际的创世区块
         CBlock genesis = CreateActualGenesisBlock();
