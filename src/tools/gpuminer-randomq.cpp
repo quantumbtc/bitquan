@@ -306,12 +306,17 @@ static bool VerifyGenesisBlock()
         // 测试1：小范围搜索（包含预期的 nonce）
         std::cout << "\n🔍 Test 1: Small range search around expected nonce..." << std::endl;
         uint32_t test_start_nonce = 1379710; // 从接近预期 nonce 开始
+        // 清零 gpu_hash 以确保没有垃圾数据
+        gpu_hash.fill(0);
+        found_nonce = 0;
+        
         bool found = RunKernelBatch(gctx, header_le, test_start_nonce,
                                     target_be, 1024,
                                     gpu_hash, found_nonce);
         
-        std::cout << "GPU Found Expected Nonce: " << (found && found_nonce == 1379716 ? "✅ YES" : "❌ NO") << std::endl;
+        std::cout << "GPU Found Expected Nonce: " << (found && found_nonce == 1379716 ? "YES" : "NO") << std::endl;
         std::cout << "Found Nonce: " << found_nonce << " (expected: 1379716)" << std::endl;
+        std::cout.flush(); // 强制刷新输出缓冲区
         
         if (found) {
             std::cout << "GPU Hash (LE): ";
@@ -347,7 +352,7 @@ static bool VerifyGenesisBlock()
                                target_be, 10000, // 更大的工作大小
                                gpu_hash, found_nonce);
         
-        std::cout << "GPU Found Any Solution: " << (found ? "✅ YES" : "❌ NO") << std::endl;
+        std::cout << "GPU Found Any Solution: " << (found ? "YES" : "NO") << std::endl;
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
             std::cout << "GPU Hash (LE): ";
@@ -365,7 +370,7 @@ static bool VerifyGenesisBlock()
                                target_be, 1, // 只测试一个 nonce
                                gpu_hash, found_nonce);
         
-        std::cout << "Direct Test Result: " << (found ? "✅ FOUND" : "❌ NOT FOUND") << std::endl;
+        std::cout << "Direct Test Result: " << (found ? "FOUND" : "NOT FOUND") << std::endl;
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
             std::cout << "GPU Hash (LE): ";
@@ -413,7 +418,7 @@ static bool VerifyGenesisBlock()
             std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
             bool cpu_matches = (cpu_hash_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
-            std::cout << "CPU Hash Match: " << (cpu_matches ? "✅ YES" : "❌ NO") << std::endl;
+            std::cout << "CPU Hash Match: " << (cpu_matches ? "YES" : "NO") << std::endl;
             
         } catch (const std::exception& e) {
             std::cout << "CPU Test Error: " << e.what() << std::endl;
@@ -444,30 +449,30 @@ static bool VerifyGenesisBlock()
                 std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
                 
                 bool gpu_debug_matches = (gpu_debug_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
-                std::cout << "GPU Debug Hash Match: " << (gpu_debug_matches ? "✅ YES" : "❌ NO") << std::endl;
+                std::cout << "GPU Debug Hash Match: " << (gpu_debug_matches ? "YES" : "NO") << std::endl;
                 
                 if (gpu_debug_matches) {
-                    std::cout << "🎉 GPU算法正确！问题可能在目标比较逻辑中。" << std::endl;
+                    std::cout << "GPU algorithm is correct! Problem might be in target comparison logic." << std::endl;
                 } else {
-                    std::cout << "❌ GPU算法与CPU不一致，需要进一步调试。" << std::endl;
+                    std::cout << "GPU algorithm differs from CPU, needs further debugging." << std::endl;
                 }
             } else {
-                std::cout << "❌ GPU调试内核执行失败。" << std::endl;
+                std::cout << "GPU debug kernel execution failed." << std::endl;
             }
         } else {
-            std::cout << "❌ GPU调试内核不可用。" << std::endl;
+            std::cout << "GPU debug kernel not available." << std::endl;
         }
         
-        std::cout << "\n🏁 GPU Verification Result: ⚠️ PARTIAL" << std::endl;
-        std::cout << "✅ Genesis block creation is correct, but GPU needs debugging" << std::endl;
-        std::cout << "❌ GPU mining function may have issues finding the solution" << std::endl;
-        std::cout << "🔧 Check GPU kernel implementation and work distribution" << std::endl;
+        std::cout << "\nGPU Verification Result: PARTIAL" << std::endl;
+        std::cout << "Genesis block creation is correct, but GPU needs debugging" << std::endl;
+        std::cout << "GPU mining function may have issues finding the solution" << std::endl;
+        std::cout << "Check GPU kernel implementation and work distribution" << std::endl;
         
         return false;
         
     } catch (const std::exception& e) {
-        std::cerr << "❌ FAILED" << std::endl;
-        std::cerr << "❌ Failed to initialize OpenCL for GPU test" << std::endl;
+        std::cerr << "FAILED" << std::endl;
+        std::cerr << "Failed to initialize OpenCL for GPU test" << std::endl;
         std::cerr << "Error: " << e.what() << std::endl;
         return false;
     }
