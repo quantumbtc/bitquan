@@ -247,9 +247,9 @@ __kernel void randomq_mining_full(
     __private uchar first_sha[32];
     sha256_general(local_header, 80u, first_sha); // produces standard big-endian SHA bytes
 
-    // Step 2: CRandomQ: Reset, set rounds/nonce, write first_sha, finalize -> randomq_out (32 bytes)
+    // Step 2: CRandomQ: reset, then set rounds/nonce, write first_sha, finalize -> randomq_out (32 bytes)
     CRANDOMQ_CTX ctx;
-    CRandomQ_Reset(&ctx);
+    CRandomQ_Reset(&ctx);  // Reset first to initialize state
     CRandomQ_SetRounds(&ctx, (ulong)8192);
     CRandomQ_SetNonce(&ctx, current_nonce);
     CRandomQ_Write(&ctx, first_sha, 32u); // note: first_sha is 32 bytes
@@ -294,6 +294,14 @@ __kernel void randomq_debug_nonce(
     uint gid = get_global_id(0);
     if (gid != 0) return; // Only first work item does the work
     
+    // First, let's just test if we can write to the output buffer
+    for (int i = 0; i < 32; ++i) {
+        result_hash[i] = (uchar)(0xAA); // Test pattern
+    }
+    
+    // If we get here and see the test pattern, the kernel is working
+    // Let's add the actual computation step by step
+    
     ulong current_nonce = (ulong)(*test_nonce);
 
     // build local header and inject nonce (header80 provided as little-endian)
@@ -305,25 +313,12 @@ __kernel void randomq_debug_nonce(
     local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
     local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
 
-    // Step 1: first SHA256(header)
+    // Step 1: first SHA256(header) - let's test this first
     __private uchar first_sha[32];
-    sha256_general(local_header, 80u, first_sha); // produces standard big-endian SHA bytes
-
-    // Step 2: CRandomQ: Reset, set rounds/nonce, write first_sha, finalize -> randomq_out (32 bytes)
-    CRANDOMQ_CTX ctx;
-    CRandomQ_Reset(&ctx);
-    CRandomQ_SetRounds(&ctx, (ulong)8192);
-    CRandomQ_SetNonce(&ctx, current_nonce);
-    CRandomQ_Write(&ctx, first_sha, 32u); // note: first_sha is 32 bytes
-    __private uchar randomq_out[32];
-    CRandomQ_Finalize(&ctx, randomq_out);
-
-    // Step 3: final SHA256(randomq_out)
-    __private uchar final32[32];
-    sha256_general(randomq_out, 32u, final32); // big-endian sha output
-
-    // Convert final32 to little-endian for output
+    sha256_general(local_header, 80u, first_sha);
+    
+    // For now, just return the first SHA256 result (but converted to LE)
     for (int i = 0; i < 32; ++i) {
-        result_hash[i] = final32[31 - i];
+        result_hash[i] = first_sha[31 - i];
     }
 }

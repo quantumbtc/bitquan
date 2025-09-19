@@ -202,11 +202,28 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     cl_int err;
     cl_mem header_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        80, (void*)header_le.data(), &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Header buffer creation failed with error: " << err << std::endl;
+        return false;
+    }
+    
     cl_mem nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       sizeof(uint32_t), &test_nonce, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Nonce buffer creation failed with error: " << err << std::endl;
+        clReleaseMemObject(header_buf);
+        return false;
+    }
+    
     unsigned char result_init[32] = {0};
     cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                                        32, result_init, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Result buffer creation failed with error: " << err << std::endl;
+        clReleaseMemObject(header_buf);
+        clReleaseMemObject(nonce_buf);
+        return false;
+    }
 
     clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
     clSetKernelArg(gctx.debug_kernel, 1, sizeof(cl_mem), &nonce_buf);
@@ -214,9 +231,20 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
 
     size_t gws = 1;
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Kernel execution failed with error: " << err << std::endl;
+        clReleaseMemObject(header_buf);
+        clReleaseMemObject(nonce_buf);
+        clReleaseMemObject(result_buf);
+        return false;
+    }
+    
     clFinish(gctx.queue);
 
-    clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
+    err = clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Buffer read failed with error: " << err << std::endl;
+    }
 
     clReleaseMemObject(header_buf);
     clReleaseMemObject(nonce_buf);
@@ -263,7 +291,7 @@ static CBlock CreateActualGenesisBlock()
  */
 static bool VerifyGenesisBlock()
 {
-    std::cout << "⚙️ GPU RandomQ Algorithm Test: Testing GPU with actual genesis block header..." << std::endl;
+        std::cout << "GPU RandomQ Algorithm Test: Testing GPU with actual genesis block header..." << std::endl;
     
     try {
         GpuMinerContext gctx;
@@ -272,7 +300,7 @@ static bool VerifyGenesisBlock()
         // 创建实际的创世区块
         CBlock genesis = CreateActualGenesisBlock();
         
-        std::cout << "📋 Genesis Block Info:" << std::endl;
+        std::cout << "Genesis Block Info:" << std::endl;
         std::cout << "  Version: " << genesis.nVersion << std::endl;
         std::cout << "  Time: " << genesis.nTime << std::endl;
         std::cout << "  Bits: 0x" << std::hex << genesis.nBits << std::dec << std::endl;
@@ -286,14 +314,14 @@ static bool VerifyGenesisBlock()
         std::array<unsigned char,80> header_le{};
         std::memcpy(header_le.data(), ser.data(), std::min<size_t>(80, ser.size()));
         
-        std::cout << "🔍 Serialized Header (80 bytes): ";
+        std::cout << "Serialized Header (80 bytes): ";
         for (int i = 0; i < 80; ++i) {
             std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)header_le[i];
         }
         std::cout << std::endl;
         
         auto target_be = TargetFromBits(genesis.nBits);
-        std::cout << "🎯 Target: ";
+        std::cout << "Target: ";
         for (unsigned char b : target_be) {
             std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
         }
@@ -304,7 +332,7 @@ static bool VerifyGenesisBlock()
         uint32_t found_nonce = 0;
         
         // 测试1：小范围搜索（包含预期的 nonce）
-        std::cout << "\n🔍 Test 1: Small range search around expected nonce..." << std::endl;
+        std::cout << "\nTest 1: Small range search around expected nonce..." << std::endl;
         uint32_t test_start_nonce = 1379710; // 从接近预期 nonce 开始
         // 清零 gpu_hash 以确保没有垃圾数据
         gpu_hash.fill(0);
@@ -336,17 +364,17 @@ static bool VerifyGenesisBlock()
             std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
             
             bool hash_matches = (gpu_hash_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
-            std::cout << "Hash Match: " << (hash_matches ? "✅ YES" : "❌ NO") << std::endl;
+            std::cout << "Hash Match: " << (hash_matches ? "YES" : "NO") << std::endl;
             
             if (found_nonce == 1379716 && hash_matches) {
-                std::cout << "🏁 GPU Verification Result: ✅ SUCCESS" << std::endl;
-                std::cout << "✅ GPU RandomQ algorithm is working correctly!" << std::endl;
+                std::cout << "GPU Verification Result: SUCCESS" << std::endl;
+                std::cout << "GPU RandomQ algorithm is working correctly!" << std::endl;
                 return true;
             }
         }
         
         // 测试2：更大的范围搜索
-        std::cout << "\n🔍 Test 2: Larger range search..." << std::endl;
+        std::cout << "\nTest 2: Larger range search..." << std::endl;
         test_start_nonce = 0;
         found = RunKernelBatch(gctx, header_le, test_start_nonce,
                                target_be, 10000, // 更大的工作大小
@@ -364,7 +392,7 @@ static bool VerifyGenesisBlock()
         }
         
         // 测试3：直接测试预期的 nonce
-        std::cout << "\n🔍 Test 3: Direct test of expected nonce..." << std::endl;
+        std::cout << "\nTest 3: Direct test of expected nonce..." << std::endl;
         test_start_nonce = 1379716; // 直接测试预期的 nonce
         found = RunKernelBatch(gctx, header_le, test_start_nonce,
                                target_be, 1, // 只测试一个 nonce
@@ -382,7 +410,7 @@ static bool VerifyGenesisBlock()
         }
         
         // 测试4：CPU 验证
-        std::cout << "\n🔍 Test 4: CPU verification of expected nonce..." << std::endl;
+        std::cout << "\nTest 4: CPU verification of expected nonce..." << std::endl;
         try {
             // 使用 CPU 实现计算哈希
             CBlockHeader test_header = genesis;
@@ -425,7 +453,7 @@ static bool VerifyGenesisBlock()
         }
         
         // 测试5：GPU 调试内核直接测试
-        std::cout << "\n🔍 Test 5: GPU debug kernel direct test..." << std::endl;
+        std::cout << "\nTest 5: GPU debug kernel direct test..." << std::endl;
         if (gctx.debug_kernel != nullptr) {
             std::array<unsigned char,32> gpu_debug_hash{};
             bool debug_success = RunDebugKernel(gctx, header_le, 1379716, gpu_debug_hash);
