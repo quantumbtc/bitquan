@@ -221,14 +221,20 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
         return false;
     }
     
-    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
-                                       32, nullptr, &err);
+    // Try using READ_WRITE with initial data to test if buffer is accessible
+    unsigned char init_pattern[32];
+    for (int i = 0; i < 32; ++i) init_pattern[i] = 0x99; // Initial pattern to verify buffer state
+    
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                       32, init_pattern, &err);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Result buffer creation failed with error: " << err << std::endl;
         clReleaseMemObject(header_buf);
         clReleaseMemObject(nonce_buf);
         return false;
     }
+    
+    std::cout << "[DEBUG] Result buffer created with initial 0x99 pattern" << std::endl;
 
     err = clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
     if (err != CL_SUCCESS) {
@@ -487,10 +493,20 @@ static bool VerifyGenesisBlock()
                 std::cout << std::dec;
                 std::cout << std::endl;
                 
-                // Analyze the debug pattern - new immediate write test
-                if (gpu_debug_hash[0] == 0xAA && gpu_debug_hash[1] == 0xBB && 
-                    gpu_debug_hash[2] == 0xCC && gpu_debug_hash[3] == 0xDD && 
-                    gpu_debug_hash[4] == 0xEE && gpu_debug_hash[5] == 0xFF) {
+                // Check if we still have the initial pattern (0x99) or if kernel wrote something
+                bool has_initial_pattern = true;
+                for (int i = 0; i < 32; ++i) {
+                    if (gpu_debug_hash[i] != 0x99) {
+                        has_initial_pattern = false;
+                        break;
+                    }
+                }
+                
+                if (has_initial_pattern) {
+                    std::cout << "DEBUG: Buffer still contains initial 0x99 pattern - kernel did not modify buffer at all" << std::endl;
+                } else if (gpu_debug_hash[0] == 0xAA && gpu_debug_hash[1] == 0xBB && 
+                          gpu_debug_hash[2] == 0xCC && gpu_debug_hash[3] == 0xDD && 
+                          gpu_debug_hash[4] == 0xEE && gpu_debug_hash[5] == 0xFF) {
                     std::cout << "DEBUG: IMMEDIATE WRITE TEST PASSED - Kernel can write to buffer!" << std::endl;
                     
                     // Check global ID at positions 8-11
@@ -501,10 +517,10 @@ static bool VerifyGenesisBlock()
                     std::cout << "DEBUG: Global ID written at positions 8-11: " << gid << std::endl;
                     
                 } else {
-                    std::cout << "DEBUG: IMMEDIATE WRITE TEST FAILED" << std::endl;
+                    std::cout << "DEBUG: Buffer was modified but not as expected" << std::endl;
                     std::cout << "DEBUG: Expected pattern: AA BB CC DD EE FF" << std::endl;
                     std::cout << "DEBUG: Got pattern: ";
-                    for (int i = 0; i < 6; ++i) {
+                    for (int i = 0; i < 12; ++i) {
                         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)gpu_debug_hash[i] << " ";
                     }
                     std::cout << std::dec << std::endl;
