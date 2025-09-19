@@ -385,22 +385,53 @@ target_link_libraries(cpuminer-randomq
 )
 install_binary_component(cpuminer-randomq)
 
-# Standalone RandomQ GPU miner (CUDA for NVIDIA GPUs)
-find_package(CUDA QUIET)
-if(CUDA_FOUND)
-  # Enable CUDA language
+# RandomQ GPU miner - Always build, with CUDA support if available
+message(STATUS "Configuring RandomQ GPU miner...")
+
+# Check for CUDA support
+include(CheckLanguage)
+check_language(CUDA)
+
+if(CMAKE_CUDA_COMPILER AND NOT CMAKE_CROSSCOMPILING)
+  # Enable CUDA language for native builds
   enable_language(CUDA)
+  find_package(CUDAToolkit QUIET)
   
-  # CUDA executable
+  if(CUDAToolkit_FOUND)
+    # CUDA-enabled version
+    add_executable(gpuminer-randomq
+      tools/gpuminer-randomq.cpp
+      tools/randomq_cuda_kernel.cu
+    )
+    
+    # Set CUDA properties
+    set_target_properties(gpuminer-randomq PROPERTIES
+      CUDA_ARCHITECTURES "50;60;70;75;80;86;89;90"
+      CUDA_STANDARD 17
+    )
+    
+    target_link_libraries(gpuminer-randomq
+      PRIVATE
+        core_interface
+        bitquantum_cli
+        bitquantum_common
+        bitquantum_util
+        libevent::core
+        libevent::extra
+        CUDA::cudart
+    )
+    
+    target_compile_definitions(gpuminer-randomq PRIVATE CUDA_FOUND)
+    message(STATUS "Building NVIDIA CUDA GPU miner")
+  else()
+    set(CMAKE_CUDA_COMPILER "")  # Reset for fallback
+  endif()
+endif()
+
+# Fallback: CPU-only version (always available)
+if(NOT CMAKE_CUDA_COMPILER OR CMAKE_CROSSCOMPILING OR NOT CUDAToolkit_FOUND)
   add_executable(gpuminer-randomq
     tools/gpuminer-randomq.cpp
-    tools/randomq_cuda_kernel.cu
-  )
-  
-  # Set CUDA properties
-  set_target_properties(gpuminer-randomq PROPERTIES
-    CUDA_ARCHITECTURES "50;60;70;75;80;86;89;90"
-    CUDA_STANDARD 17
   )
   
   target_link_libraries(gpuminer-randomq
@@ -411,25 +442,18 @@ if(CUDA_FOUND)
       bitquantum_util
       libevent::core
       libevent::extra
-      ${CUDA_LIBRARIES}
   )
   
-  target_include_directories(gpuminer-randomq PRIVATE ${CUDA_INCLUDE_DIRS})
-  target_compile_definitions(gpuminer-randomq PRIVATE CUDA_FOUND)
-  install_binary_component(gpuminer-randomq)
+  target_compile_definitions(gpuminer-randomq PRIVATE CPU_ONLY)
   
-  message(STATUS "CUDA found, building NVIDIA GPU miner")
-else()
-  message(STATUS "CUDA not found, skipping NVIDIA GPU miner")
-  
-  # Fallback to OpenCL version if available
-  find_package(OpenCL QUIET)
-  if(OpenCL_FOUND)
-    message(STATUS "OpenCL found, could build OpenCL GPU miner instead")
+  if(CMAKE_CROSSCOMPILING)
+    message(STATUS "Building CPU-only GPU miner (cross-compiling)")
   else()
-    message(STATUS "Neither CUDA nor OpenCL found, no GPU miner will be built")
+    message(STATUS "Building CPU-only GPU miner (CUDA not available)")
   endif()
 endif()
+
+install_binary_component(gpuminer-randomq)
 
 
 

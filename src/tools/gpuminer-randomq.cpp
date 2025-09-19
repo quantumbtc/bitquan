@@ -31,9 +31,11 @@
 #include <event2/buffer.h>
 #include <event2/http.h>
 
+#ifdef CUDA_FOUND
 // CUDA headers
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -52,6 +54,7 @@ using namespace std::chrono_literals;
 // Provide translation function symbol expected by common/init.cpp link
 const TranslateFn G_TRANSLATION_FUN{nullptr};
 
+#ifdef CUDA_FOUND
 // CUDA error checking macro
 #define CUDA_CHECK(call) do { \
     cudaError_t err = call; \
@@ -59,7 +62,9 @@ const TranslateFn G_TRANSLATION_FUN{nullptr};
         throw std::runtime_error(std::string("CUDA error: ") + cudaGetErrorString(err)); \
     } \
 } while(0)
+#endif
 
+#ifdef CUDA_FOUND
 // GPU device information
 struct GPUDevice {
     int device_id;
@@ -97,12 +102,14 @@ struct CudaMinerContext {
         memset(h_result_hash, 0, 32);
     }
 };
+#endif
 
 static const char DEFAULT_RPCCONNECT[] = "127.0.0.1";
 static const int DEFAULT_HTTP_CLIENT_TIMEOUT = 900;
 
 static std::atomic<bool> g_stop{false};
 
+#ifdef CUDA_FOUND
 // Forward declarations
 extern "C" {
     // CUDA kernel wrapper functions (implemented in .cu file)
@@ -120,6 +127,7 @@ extern "C" {
     
     void cuda_device_query();
 }
+#endif
 
 static void SetupMinerArgs(ArgsManager& argsman)
 {
@@ -145,6 +153,7 @@ static void SetupMinerArgs(ArgsManager& argsman)
     argsman.AddArg("-list-gpus", "List available GPU devices and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
+#ifdef CUDA_FOUND
 // GPU device detection and management
 static std::vector<GPUDevice> DetectGPUDevices()
 {
@@ -656,6 +665,137 @@ static void GPUMinerLoop()
     CleanupCudaContext(cuda_ctx);
     reporter.join();
 }
+#else
+// CPU-only mining loop when CUDA is not available
+static void GPUMinerLoop()
+{
+    tfm::format(std::cout, "[INFO] CUDA not available, using CPU-only mining\n");
+    tfm::format(std::cout, "[INFO] This version provides basic mining functionality without GPU acceleration\n");
+    
+    const std::string payout = gArgs.GetArg("-address", "");
+    if (payout.empty()) {
+        throw std::runtime_error("-address is required");
+    }
+    
+    const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
+    
+    std::atomic<uint64_t> total_hashes{0};
+    std::atomic<uint64_t> window_hashes{0};
+    uint64_t start_time = (uint64_t)GetTime();
+    
+    // Hash rate reporter thread
+    std::thread reporter([&](){
+        while (!g_stop.load()) {
+            uint64_t now = (uint64_t)GetTime();
+            uint64_t elapsed = now - start_time;
+            double avg = elapsed ? (double)total_hashes.load() / (double)elapsed : 0.0;
+            double cur = window_hashes.exchange(0) / 5.0;
+            tfm::format(std::cout, "[HashRate] Current: %.2f H/s | Average: %.2f H/s | Total: %llu\n", 
+                       cur, avg, (unsigned long long)total_hashes.load());
+            std::cout.flush();
+            for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s);
+        }
+    });
+    
+    try {
+        while (!g_stop.load()) {
+            // Get block template
+            UniValue rules(UniValue::VARR); rules.push_back("segwit");
+            UniValue caps(UniValue::VARR); caps.push_back("coinbasetxn");
+            UniValue req(UniValue::VOBJ);
+            req.pushKV("rules", rules);
+            req.pushKV("capabilities", caps);
+            UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
+            UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
+            
+            const UniValue err = gbt.find_value("error");
+            if (!err.isNull()) {
+                std::string error_msg = err.write();
+                if (error_msg.find("not connected") != std::string::npos || 
+                    error_msg.find("connection") != std::string::npos ||
+                    error_msg.find("timeout") != std::string::npos) {
+                    tfm::format(std::cout, "[Info] Node connection lost, retrying in 5 seconds...\n");
+                    std::cout.flush();
+                    for (int i = 0; i < 5 && !g_stop.load(); ++i) {
+                        std::this_thread::sleep_for(1s);
+                    }
+                    continue;
+                }
+                throw std::runtime_error(error_msg);
+            }
+            
+            const UniValue res = gbt.find_value("result");
+            if (res.isNull()) {
+                tfm::format(std::cout, "[Info] GBT returned null, retrying in 5 seconds...\n");
+                std::cout.flush();
+                for (int i = 0; i < 5 && !g_stop.load(); ++i) {
+                    std::this_thread::sleep_for(1s);
+                }
+                continue;
+            }
+            
+            CBlock block;
+            std::string tmpl_hex;
+            if (!BuildBlockFromGBT(res, block, tmpl_hex)) {
+                UniValue reply = RpcCallWait("generatetoaddress", {"1", payout, std::to_string(maxtries)});
+                continue;
+            }
+            
+            // Print template info
+            int32_t height = res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>();
+            arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
+            tfm::format(std::cout,
+                "[Template] height=%d version=%d prev=%s time=%u bits=%08x target=%s txs=%u merkle=%s\n",
+                height, block.nVersion, block.hashPrevBlock.GetHex().c_str(),
+                (unsigned)block.nTime, (unsigned)block.nBits, target.GetHex().c_str(),
+                (unsigned)block.vtx.size(), block.hashMerkleRoot.GetHex().c_str());
+            std::cout.flush();
+            
+            // CPU mining (simplified version)
+            bool found = false;
+            for (uint32_t nonce = 0; nonce < (uint32_t)maxtries && !g_stop.load() && !found; ++nonce) {
+                block.nNonce = nonce;
+                uint256 hash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+                window_hashes.fetch_add(1, std::memory_order_relaxed);
+                total_hashes.fetch_add(1, std::memory_order_relaxed);
+                
+                if (!neg && !of && target != 0 && UintToArith256(hash) <= target) {
+                    found = true;
+                    
+                    tfm::format(std::cout,
+                        "[Found] height=%d nonce=%u time=%u bits=%08x target=%s powhash=%s merkle=%s\n",
+                        height, (unsigned)block.nNonce, (unsigned)block.nTime,
+                        (unsigned)block.nBits, target.GetHex().c_str(),
+                        hash.GetHex().c_str(), block.hashMerkleRoot.GetHex().c_str());
+                    std::cout.flush();
+                    
+                    // Submit block
+                    std::string block_hex = EncodeHexBlk(block);
+                    UniValue sub = RpcCallWait("submitblock", {block_hex});
+                    
+                    const UniValue err_sub = sub.find_value("error");
+                    const UniValue resv = sub.find_value("result");
+                    if (!err_sub.isNull()) {
+                        std::string emsg = err_sub.isObject() && !err_sub.find_value("message").isNull() ? 
+                                          err_sub.find_value("message").get_str() : err_sub.write();
+                        tfm::format(std::cout, "[Submit] result=%s error=%s\n", 
+                                   resv.isNull() ? "null" : resv.write().c_str(), emsg.c_str());
+                    } else {
+                        tfm::format(std::cout, "[Submit] result=%s error=null\n", 
+                                   resv.isNull() ? "null" : resv.write().c_str());
+                    }
+                    std::cout.flush();
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        g_stop.store(true);
+        tfm::format(std::cerr, "[CPU] Mining loop error: %s\n", e.what());
+    }
+    
+    reporter.join();
+}
+#endif
 
 int main(int argc, char* argv[])
 {
@@ -679,7 +819,15 @@ int main(int argc, char* argv[])
         
         // Handle list-gpus option
         if (gArgs.GetBoolArg("-list-gpus", false)) {
+#ifdef CUDA_FOUND
             DetectGPUDevices();
+#else
+            tfm::format(std::cout, "[INFO] CUDA not available in this build\n");
+            tfm::format(std::cout, "[INFO] This is a CPU-only version\n");
+            tfm::format(std::cout, "[INFO] To use NVIDIA GPUs, please:\n");
+            tfm::format(std::cout, "       1. Install CUDA Toolkit\n");
+            tfm::format(std::cout, "       2. Recompile with CUDA support\n");
+#endif
             return EXIT_SUCCESS;
         }
         
