@@ -491,22 +491,30 @@ static bool VerifyGenesisBlock()
                 
                 std::cout << "DEBUG: Global ID written by kernel: " << gid << std::endl;
                 
-                if (gid == 0 && gpu_debug_hash[4] == 0xAA) {
-                    std::cout << "DEBUG: Kernel executed successfully with work item 0" << std::endl;
-                    if (gpu_debug_hash[4] == 0xBB && gpu_debug_hash[5] == 0xCC) {
-                        std::cout << "DEBUG: Kernel successfully read nonce parameter" << std::endl;
+                if (gid == 0) {
+                    if (gpu_debug_hash[4] == 0xAA) {
+                        std::cout << "DEBUG: Step 1 PASSED - Basic write successful" << std::endl;
+                        if (gpu_debug_hash[5] == 0xBB && gpu_debug_hash[6] == 0xCC && gpu_debug_hash[7] == 0xDD) {
+                            std::cout << "DEBUG: Step 2 PASSED - Multiple writes successful" << std::endl;
+                            if (gpu_debug_hash[8] == 0xEE && gpu_debug_hash[9] == 0xFF) {
+                                std::cout << "DEBUG: Step 3 PASSED - Nonce parameter read successfully" << std::endl;
+                            } else {
+                                std::cout << "DEBUG: Step 3 FAILED - Nonce parameter read failed" << std::endl;
+                            }
+                            if (gpu_debug_hash[10] == 0x11 && gpu_debug_hash[11] == 0x22) {
+                                std::cout << "DEBUG: Step 4 PASSED - Header data read successfully" << std::endl;
+                            } else {
+                                std::cout << "DEBUG: Step 4 FAILED - Header data read failed" << std::endl;
+                            }
+                        } else {
+                            std::cout << "DEBUG: Step 2 FAILED - Multiple writes failed" << std::endl;
+                        }
                     } else {
-                        std::cout << "DEBUG: Kernel failed to read correct nonce parameter" << std::endl;
+                        std::cout << "DEBUG: Step 1 FAILED - Basic write failed (got 0x" 
+                                 << std::hex << (int)gpu_debug_hash[4] << std::dec << " instead of 0xAA)" << std::endl;
                     }
-                    if (gpu_debug_hash[6] == 0xDD && gpu_debug_hash[7] == 0xEE) {
-                        std::cout << "DEBUG: Kernel successfully read header data" << std::endl;
-                    } else {
-                        std::cout << "DEBUG: Kernel failed to read header data correctly" << std::endl;
-                    }
-                } else if (gid == 0) {
-                    std::cout << "DEBUG: Work item 0 executed but test pattern not found" << std::endl;
                 } else {
-                    std::cout << "DEBUG: Unexpected global ID or kernel execution issue" << std::endl;
+                    std::cout << "DEBUG: Unexpected global ID: " << gid << std::endl;
                 }
                 
                 // 转换为大端序

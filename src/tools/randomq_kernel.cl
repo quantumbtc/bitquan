@@ -302,22 +302,30 @@ __kernel void randomq_debug_nonce(
     // Only first work item continues with the test
     if (gid != 0) return;
     
-    // Step 1: Test pattern to verify kernel execution
-    for (int i = 4; i < 32; ++i) {
-        result_hash[i] = (uchar)(0xAA); // Test pattern
+    // Step 1: Very simple test - just write one byte
+    result_hash[4] = 0xAA;
+    
+    // Step 2: Write a few more bytes to test loop
+    result_hash[5] = 0xBB;
+    result_hash[6] = 0xCC;
+    result_hash[7] = 0xDD;
+    
+    // Step 3: Test if we can read input nonce (careful access)
+    if (test_nonce != 0) {  // Check pointer is not null
+        ulong current_nonce = (ulong)(*test_nonce);
+        if (current_nonce == 1379716) {
+            result_hash[8] = 0xEE;
+            result_hash[9] = 0xFF;
+        }
     }
     
-    // Step 2: Test if we can read input data
-    ulong current_nonce = (ulong)(*test_nonce);
-    if (current_nonce == 1379716) {
-        // Mark that we successfully read the correct nonce
-        result_hash[4] = 0xBB;
-        result_hash[5] = 0xCC;
-    }
-    
-    // Step 3: Test if we can read header data
-    if (header80[0] == 0x01 && header80[1] == 0x00) { // Version = 1 in little-endian
-        result_hash[6] = 0xDD;
-        result_hash[7] = 0xEE;
+    // Step 4: Test if we can read header data (careful access)
+    if (header80 != 0) {  // Check pointer is not null
+        if (header80[0] == 0x01) {
+            result_hash[10] = 0x11;
+        }
+        if (header80[1] == 0x00) {
+            result_hash[11] = 0x22;
+        }
     }
 }
