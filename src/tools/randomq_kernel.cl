@@ -358,3 +358,40 @@ __kernel void minimal_test(__global uint* output) {
     uint gid = get_global_id(0);
     output[gid] = gid + 0x12345678;
 }
+
+// Hybrid CPU-GPU mining kernel: GPU only handles RandomQ
+__kernel void randomq_only(
+    __global const uchar* sha256_input,  // 32 bytes SHA256 result from CPU
+    __global const uint* nonce_base,     // uint32 base nonce
+    __global const uchar* target32,      // 32 bytes target (little-endian)
+    __global volatile uint* found_flag,
+    __global uint* found_nonce,
+    __global uchar* result_hash          // 32 bytes RandomQ output (will be SHA256'd by CPU)
+) {
+    uint gid = get_global_id(0);
+    uint base = *nonce_base;
+    ulong current_nonce = (ulong)(base + gid);
+
+    // Step 1: CRandomQ processing only (SHA256 done by CPU)
+    CRANDOMQ_CTX ctx;
+    CRandomQ_Reset(&ctx);
+    CRandomQ_SetRounds(&ctx, (ulong)8192);
+    CRandomQ_SetNonce(&ctx, current_nonce);
+    CRandomQ_Write(&ctx, sha256_input, 32u);  // Use SHA256 result from CPU
+    
+    __private uchar randomq_out[32];
+    CRandomQ_Finalize(&ctx, randomq_out);
+    
+    // Return RandomQ output to CPU for final SHA256 processing
+    // Only the first work item writes to the main result buffer for testing
+    if (gid == 0) {
+        uint old = atomic_cmpxchg((volatile __global uint*)found_flag, 0u, 1u);
+        if (old == 0u) {
+            *found_nonce = (uint)current_nonce;
+            // Copy RandomQ result to main result buffer
+            for (int i = 0; i < 32; ++i) {
+                result_hash[i] = randomq_out[i];
+            }
+        }
+    }
+}

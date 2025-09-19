@@ -14,6 +14,7 @@
 #include <iomanip>
 
 #include "crypto/randomq_mining.h"
+#include "crypto/sha256.h"
 #include "primitives/block.h"
 #include "uint256.h"
 #include "arith_uint256.h"
@@ -652,6 +653,168 @@ static bool TestMinimalKernel(GpuMinerContext& gctx)
 }
 
 /**
+ * Hybrid CPU-GPU mining: CPU handles SHA256, GPU handles RandomQ
+ */
+static bool RunHybridMining(GpuMinerContext& gctx,
+                           const std::array<unsigned char,80>& header_le,
+                           uint32_t start_nonce,
+                           const std::array<unsigned char,32>& target_be,
+                           uint32_t global_work_size,
+                           std::array<unsigned char,32>& out_hash,
+                           uint32_t& out_found_nonce)
+{
+    std::cout << "[HYBRID] Starting CPU-GPU hybrid mining..." << std::endl;
+    std::cout << "[HYBRID] CPU: SHA256 processing" << std::endl;
+    std::cout << "[HYBRID] GPU: RandomQ processing" << std::endl;
+    
+    cl_int err;
+    
+    // Step 1: CPU calculates SHA256 of header
+    std::cout << "[CPU] Computing SHA256 of block header..." << std::endl;
+    
+    // Create header with nonce (we'll use start_nonce for the SHA256)
+    std::array<unsigned char,80> header_with_nonce = header_le;
+    header_with_nonce[76] = (unsigned char)((start_nonce) & 0xFF);
+    header_with_nonce[77] = (unsigned char)((start_nonce >> 8) & 0xFF);
+    header_with_nonce[78] = (unsigned char)((start_nonce >> 16) & 0xFF);
+    header_with_nonce[79] = (unsigned char)((start_nonce >> 24) & 0xFF);
+    
+    // CPU computes SHA256 of header (using existing crypto functions)
+    std::array<unsigned char,32> first_sha256;
+    
+    // Use the existing crypto functions to compute SHA256
+    CSHA256 sha256_hasher;
+    sha256_hasher.Write(header_with_nonce.data(), 80);
+    sha256_hasher.Finalize(first_sha256.data());
+    
+    std::cout << "[CPU] SHA256 result: ";
+    for (int i = 0; i < 8; ++i) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)first_sha256[i];
+    }
+    std::cout << "..." << std::dec << std::endl;
+    
+    // Step 2: Create OpenCL buffers
+    cl_mem sha256_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                       32, (void*)first_sha256.data(), &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[HYBRID] Failed to create SHA256 buffer: " << err << std::endl;
+        return false;
+    }
+    
+    cl_mem nonce_base_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                          sizeof(uint32_t), &start_nonce, &err);
+    cl_mem target_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                      32, (void*)target_be.data(), &err);
+    
+    uint32_t init_zero = 0;
+    cl_mem found_flag_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                          sizeof(uint32_t), &init_zero, &err);
+    cl_mem found_nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                           sizeof(uint32_t), &init_zero, &err);
+    
+    // Result buffer for RandomQ outputs
+    unsigned char result_buffer[32] = {0};
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                      32, result_buffer, &err);
+    
+    // Step 3: Create and set up hybrid kernel
+    cl_kernel hybrid_kernel = clCreateKernel(gctx.program, "randomq_only", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[HYBRID] Failed to create hybrid kernel: " << err << std::endl;
+        clReleaseMemObject(sha256_buf);
+        clReleaseMemObject(nonce_base_buf);
+        clReleaseMemObject(target_buf);
+        clReleaseMemObject(found_flag_buf);
+        clReleaseMemObject(found_nonce_buf);
+        clReleaseMemObject(result_buf);
+        return false;
+    }
+    
+    clSetKernelArg(hybrid_kernel, 0, sizeof(cl_mem), &sha256_buf);
+    clSetKernelArg(hybrid_kernel, 1, sizeof(cl_mem), &nonce_base_buf);
+    clSetKernelArg(hybrid_kernel, 2, sizeof(cl_mem), &target_buf);
+    clSetKernelArg(hybrid_kernel, 3, sizeof(cl_mem), &found_flag_buf);
+    clSetKernelArg(hybrid_kernel, 4, sizeof(cl_mem), &found_nonce_buf);
+    clSetKernelArg(hybrid_kernel, 5, sizeof(cl_mem), &result_buf);
+    
+    // Step 4: Execute GPU RandomQ processing
+    std::cout << "[GPU] Processing RandomQ for " << global_work_size << " nonces..." << std::endl;
+    size_t gws = global_work_size;
+    
+    cl_event kernel_event;
+    err = clEnqueueNDRangeKernel(gctx.queue, hybrid_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, &kernel_event);
+    if (err != CL_SUCCESS) {
+        std::cout << "[HYBRID] Failed to execute hybrid kernel: " << err << std::endl;
+        clReleaseKernel(hybrid_kernel);
+        clReleaseMemObject(sha256_buf);
+        clReleaseMemObject(nonce_base_buf);
+        clReleaseMemObject(target_buf);
+        clReleaseMemObject(found_flag_buf);
+        clReleaseMemObject(found_nonce_buf);
+        clReleaseMemObject(result_buf);
+        return false;
+    }
+    
+    // Wait for GPU completion
+    clFlush(gctx.queue);
+    clWaitForEvents(1, &kernel_event);
+    clFinish(gctx.queue);
+    
+    // Step 5: CPU reads results
+    std::cout << "[CPU] Reading GPU RandomQ results..." << std::endl;
+    
+    uint32_t found_flag = 0;
+    clEnqueueReadBuffer(gctx.queue, found_flag_buf, CL_TRUE, 0, sizeof(uint32_t), &found_flag, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(gctx.queue, found_nonce_buf, CL_TRUE, 0, sizeof(uint32_t), &out_found_nonce, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
+    
+    bool found = (found_flag != 0);
+    
+    if (found) {
+        std::cout << "[HYBRID] GPU completed RandomQ processing" << std::endl;
+        std::cout << "[CPU] RandomQ result: ";
+        for (int i = 0; i < 8; ++i) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)out_hash[i];
+        }
+        std::cout << "..." << std::dec << std::endl;
+        
+        // Step 6: CPU performs final SHA256 on RandomQ result
+        std::cout << "[CPU] Computing final SHA256..." << std::endl;
+        
+        // Compute final SHA256 of the RandomQ result
+        CSHA256 final_sha256_hasher;
+        final_sha256_hasher.Write(out_hash.data(), 32);
+        
+        std::array<unsigned char,32> final_hash;
+        final_sha256_hasher.Finalize(final_hash.data());
+        
+        // Copy final hash back to out_hash (little-endian format for comparison)
+        for (int i = 0; i < 32; ++i) {
+            out_hash[i] = final_hash[31 - i]; // Convert to little-endian
+        }
+        
+        std::cout << "[CPU] Final hash (LE): ";
+        for (int i = 0; i < 8; ++i) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)out_hash[i];
+        }
+        std::cout << "..." << std::dec << std::endl;
+    }
+    
+    // Cleanup
+    clReleaseEvent(kernel_event);
+    clReleaseKernel(hybrid_kernel);
+    clReleaseMemObject(sha256_buf);
+    clReleaseMemObject(nonce_base_buf);
+    clReleaseMemObject(target_buf);
+    clReleaseMemObject(found_flag_buf);
+    clReleaseMemObject(found_nonce_buf);
+    clReleaseMemObject(result_buf);
+    
+    std::cout << "[HYBRID] Hybrid mining completed. Found: " << (found ? "YES" : "NO") << std::endl;
+    return found;
+}
+
+/**
  * 将 nBits 转换为 target（little-endian 字节序，与哈希比较一致）
  */
 static std::array<unsigned char,32> TargetFromBits(unsigned int nBits)
@@ -912,8 +1075,18 @@ static bool VerifyGenesisBlock()
         bool simple_test_passed = TestSimpleKernel(gctx);
         std::cout << "Simple kernel test result: " << (simple_test_passed ? "PASSED" : "FAILED") << std::endl;
         
-        // 测试6：GPU 调试内核直接测试
-        std::cout << "\nTest 6: GPU debug kernel direct test..." << std::endl;
+        // 测试6：混合CPU-GPU挖矿测试
+        std::cout << "\nTest 6: Hybrid CPU-GPU mining test..." << std::endl;
+        std::array<unsigned char,32> hybrid_hash{};
+        uint32_t hybrid_nonce = 0;
+        
+        bool hybrid_success = RunHybridMining(gctx, header_le, 1379710,
+                                             target_be, 10,
+                                             hybrid_hash, hybrid_nonce);
+        std::cout << "Hybrid mining test result: " << (hybrid_success ? "SUCCESS" : "FAILED") << std::endl;
+        
+        // 测试7：GPU 调试内核直接测试
+        std::cout << "\nTest 7: GPU debug kernel direct test..." << std::endl;
         if (gctx.debug_kernel != nullptr) {
             std::cout << "[DEBUG] Debug kernel is available, attempting to run..." << std::endl;
             std::array<unsigned char,32> gpu_debug_hash{};
