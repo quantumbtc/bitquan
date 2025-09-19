@@ -291,21 +291,21 @@ __kernel void randomq_debug_nonce(
     __global const uint* test_nonce, // specific nonce to test
     __global uchar* result_hash // 32 bytes output hash
 ) {
+    // Immediate test - write pattern before doing anything else
+    result_hash[0] = 0xAA;
+    result_hash[1] = 0xBB;
+    result_hash[2] = 0xCC;
+    result_hash[3] = 0xDD;
+    result_hash[4] = 0xEE;
+    result_hash[5] = 0xFF;
+    
     uint gid = get_global_id(0);
     
-    // Write global ID to first 4 bytes to see if kernel executes
-    result_hash[0] = (uchar)(gid & 0xFF);
-    result_hash[1] = (uchar)((gid >> 8) & 0xFF);
-    result_hash[2] = (uchar)((gid >> 16) & 0xFF);
-    result_hash[3] = (uchar)((gid >> 24) & 0xFF);
-    
-    // Step 1: Very simple test - just write one byte (all work items)
-    result_hash[4] = 0xAA;
-    
-    // Step 2: Write a few more bytes to test loop
-    result_hash[5] = 0xBB;
-    result_hash[6] = 0xCC;
-    result_hash[7] = 0xDD;
+    // Write global ID to later positions
+    result_hash[8] = (uchar)(gid & 0xFF);
+    result_hash[9] = (uchar)((gid >> 8) & 0xFF);
+    result_hash[10] = (uchar)((gid >> 16) & 0xFF);
+    result_hash[11] = (uchar)((gid >> 24) & 0xFF);
     
     // Only first work item continues with parameter tests
     if (gid != 0) return;

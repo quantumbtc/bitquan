@@ -487,38 +487,27 @@ static bool VerifyGenesisBlock()
                 std::cout << std::dec;
                 std::cout << std::endl;
                 
-                // Analyze the debug pattern
-                uint32_t gid = (uint32_t)gpu_debug_hash[0] | 
-                              ((uint32_t)gpu_debug_hash[1] << 8) |
-                              ((uint32_t)gpu_debug_hash[2] << 16) |
-                              ((uint32_t)gpu_debug_hash[3] << 24);
-                
-                std::cout << "DEBUG: Global ID written by kernel: " << gid << std::endl;
-                
-                if (gid == 0) {
-                    if (gpu_debug_hash[4] == 0xAA) {
-                        std::cout << "DEBUG: Step 1 PASSED - Basic write successful" << std::endl;
-                        if (gpu_debug_hash[5] == 0xBB && gpu_debug_hash[6] == 0xCC && gpu_debug_hash[7] == 0xDD) {
-                            std::cout << "DEBUG: Step 2 PASSED - Multiple writes successful" << std::endl;
-                            if (gpu_debug_hash[8] == 0xEE && gpu_debug_hash[9] == 0xFF) {
-                                std::cout << "DEBUG: Step 3 PASSED - Nonce parameter read successfully" << std::endl;
-                            } else {
-                                std::cout << "DEBUG: Step 3 FAILED - Nonce parameter read failed" << std::endl;
-                            }
-                            if (gpu_debug_hash[10] == 0x11 && gpu_debug_hash[11] == 0x22) {
-                                std::cout << "DEBUG: Step 4 PASSED - Header data read successfully" << std::endl;
-                            } else {
-                                std::cout << "DEBUG: Step 4 FAILED - Header data read failed" << std::endl;
-                            }
-                        } else {
-                            std::cout << "DEBUG: Step 2 FAILED - Multiple writes failed" << std::endl;
-                        }
-                    } else {
-                        std::cout << "DEBUG: Step 1 FAILED - Basic write failed (got 0x" 
-                                 << std::hex << (int)gpu_debug_hash[4] << std::dec << " instead of 0xAA)" << std::endl;
-                    }
+                // Analyze the debug pattern - new immediate write test
+                if (gpu_debug_hash[0] == 0xAA && gpu_debug_hash[1] == 0xBB && 
+                    gpu_debug_hash[2] == 0xCC && gpu_debug_hash[3] == 0xDD && 
+                    gpu_debug_hash[4] == 0xEE && gpu_debug_hash[5] == 0xFF) {
+                    std::cout << "DEBUG: IMMEDIATE WRITE TEST PASSED - Kernel can write to buffer!" << std::endl;
+                    
+                    // Check global ID at positions 8-11
+                    uint32_t gid = (uint32_t)gpu_debug_hash[8] | 
+                                  ((uint32_t)gpu_debug_hash[9] << 8) |
+                                  ((uint32_t)gpu_debug_hash[10] << 16) |
+                                  ((uint32_t)gpu_debug_hash[11] << 24);
+                    std::cout << "DEBUG: Global ID written at positions 8-11: " << gid << std::endl;
+                    
                 } else {
-                    std::cout << "DEBUG: Unexpected global ID: " << gid << std::endl;
+                    std::cout << "DEBUG: IMMEDIATE WRITE TEST FAILED" << std::endl;
+                    std::cout << "DEBUG: Expected pattern: AA BB CC DD EE FF" << std::endl;
+                    std::cout << "DEBUG: Got pattern: ";
+                    for (int i = 0; i < 6; ++i) {
+                        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)gpu_debug_hash[i] << " ";
+                    }
+                    std::cout << std::dec << std::endl;
                 }
                 
                 // 转换为大端序
