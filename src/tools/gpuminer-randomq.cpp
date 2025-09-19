@@ -319,6 +319,44 @@ static bool VerifyGenesisBlock()
             std::cout << std::endl;
         }
         
+        // 测试4：CPU 验证
+        std::cout << "\n🔍 Test 4: CPU verification of expected nonce..." << std::endl;
+        try {
+            // 使用 CPU 实现计算哈希
+            CBlockHeader test_header = genesis;
+            test_header.nNonce = 1379716;
+            
+            std::vector<unsigned char> test_ser;
+            VectorWriter(test_ser, 0, test_header.nVersion, test_header.hashPrevBlock, test_header.hashMerkleRoot, test_header.nTime, test_header.nBits, test_header.nNonce);
+            
+            // 使用 CPU RandomQ 实现
+            CRandomQHash cpu_hasher;
+            cpu_hasher.Write(std::span<const unsigned char>(test_ser.data(), test_ser.size()));
+            cpu_hasher.SetRandomQNonce(1379716);
+            cpu_hasher.SetRandomQRounds(8192);
+            
+            unsigned char cpu_hash[32];
+            cpu_hasher.Finalize(std::span<unsigned char>(cpu_hash, 32));
+            
+            std::cout << "CPU Hash: ";
+            for (unsigned char b : cpu_hash) printf("%02x", b);
+            std::cout << std::endl;
+            std::cout << "Expected: 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
+            
+            std::string cpu_hash_hex;
+            for (unsigned char b : cpu_hash) {
+                char buf[3];
+                sprintf(buf, "%02x", b);
+                cpu_hash_hex += buf;
+            }
+            
+            bool cpu_matches = (cpu_hash_hex == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
+            std::cout << "CPU Hash Match: " << (cpu_matches ? "✅ YES" : "❌ NO") << std::endl;
+            
+        } catch (const std::exception& e) {
+            std::cout << "CPU Test Error: " << e.what() << std::endl;
+        }
+        
         std::cout << "\n🏁 GPU Verification Result: ⚠️ PARTIAL" << std::endl;
         std::cout << "✅ Genesis block creation is correct, but GPU needs debugging" << std::endl;
         std::cout << "❌ GPU mining function may have issues finding the solution" << std::endl;
