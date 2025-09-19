@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <cstring>
+#include <iomanip>
 
 #include "crypto/randomq_mining.h"
 #include "primitives/block.h"
@@ -287,13 +288,16 @@ static bool VerifyGenesisBlock()
         
         std::cout << "🔍 Serialized Header (80 bytes): ";
         for (int i = 0; i < 80; ++i) {
-            printf("%02x", header_le[i]);
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)header_le[i];
         }
         std::cout << std::endl;
         
         auto target_be = TargetFromBits(genesis.nBits);
         std::cout << "🎯 Target: ";
-        for (unsigned char b : target_be) printf("%02x", b);
+        for (unsigned char b : target_be) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+        }
+        std::cout << std::dec;
         std::cout << std::endl;
         
         std::array<unsigned char,32> gpu_hash{};
@@ -311,8 +315,10 @@ static bool VerifyGenesisBlock()
         
         if (found) {
             std::cout << "GPU Hash (LE): ";
-            for (unsigned char b : gpu_hash) printf("%02x", b);
-            std::cout << std::endl;
+            for (unsigned char b : gpu_hash) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+            }
+            std::cout << std::dec << std::endl;
             
             // 转换为大端序
             std::string gpu_hash_be;
@@ -345,7 +351,10 @@ static bool VerifyGenesisBlock()
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
             std::cout << "GPU Hash (LE): ";
-            for (unsigned char b : gpu_hash) printf("%02x", b);
+            for (unsigned char b : gpu_hash) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+            }
+            std::cout << std::dec;
             std::cout << std::endl;
         }
         
@@ -360,7 +369,10 @@ static bool VerifyGenesisBlock()
         if (found) {
             std::cout << "Found Nonce: " << found_nonce << std::endl;
             std::cout << "GPU Hash (LE): ";
-            for (unsigned char b : gpu_hash) printf("%02x", b);
+            for (unsigned char b : gpu_hash) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+            }
+            std::cout << std::dec;
             std::cout << std::endl;
         }
         
@@ -384,7 +396,10 @@ static bool VerifyGenesisBlock()
             cpu_hasher.Finalize(std::span<unsigned char>(cpu_hash, 32));
             
             std::cout << "CPU Hash (LE): ";
-            for (unsigned char b : cpu_hash) printf("%02x", b);
+            for (unsigned char b : cpu_hash) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+            }
+            std::cout << std::dec;
             std::cout << std::endl;
             
             // 转换为大端序
@@ -412,7 +427,10 @@ static bool VerifyGenesisBlock()
             
             if (debug_success) {
                 std::cout << "GPU Debug Hash (LE): ";
-                for (unsigned char b : gpu_debug_hash) printf("%02x", b);
+                for (unsigned char b : gpu_debug_hash) {
+                    std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+                }
+                std::cout << std::dec;
                 std::cout << std::endl;
                 
                 // 转换为大端序
@@ -518,7 +536,10 @@ int main(int argc, char* argv[])
 
         if (found) {
             std::cout << "[GPU] Found nonce: " << found_nonce << "\nHash: ";
-            for (unsigned char b : gpu_hash) printf("%02x", b);
+            for (unsigned char b : gpu_hash) {
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+            }
+            std::cout << std::dec;
             std::cout << std::endl;
         } else {
             std::cout << "[GPU] No solution in this batch.\n";
