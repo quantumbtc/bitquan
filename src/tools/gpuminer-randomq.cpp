@@ -124,14 +124,14 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     }
 
     // List all available kernels in the program for debugging
-    size_t num_kernels = 0;
+    cl_uint num_kernels = 0;
     err = clCreateKernelsInProgram(gctx.program, 0, nullptr, &num_kernels);
     if (err == CL_SUCCESS && num_kernels > 0) {
         std::cout << "[GPU] Found " << num_kernels << " kernels in program:" << std::endl;
         std::vector<cl_kernel> kernels(num_kernels);
         err = clCreateKernelsInProgram(gctx.program, num_kernels, kernels.data(), nullptr);
         if (err == CL_SUCCESS) {
-            for (size_t i = 0; i < num_kernels; ++i) {
+            for (cl_uint i = 0; i < num_kernels; ++i) {
                 size_t name_size = 0;
                 clGetKernelInfo(kernels[i], CL_KERNEL_FUNCTION_NAME, 0, nullptr, &name_size);
                 std::string kernel_name(name_size, '\0');
