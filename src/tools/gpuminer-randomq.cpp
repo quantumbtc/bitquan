@@ -77,6 +77,7 @@ struct GpuMinerContext {
     cl_command_queue queue = nullptr;
     cl_program program = nullptr;
     cl_kernel kernel = nullptr;
+    cl_kernel debug_kernel = nullptr;
 }; 
 
 static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
@@ -123,6 +124,12 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
 
     gctx.kernel = clCreateKernel(gctx.program, "randomq_mining_full", &err);
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create kernel");
+    
+    gctx.debug_kernel = clCreateKernel(gctx.program, "randomq_debug_nonce", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[GPU] Warning: Failed to create debug kernel (error: " << err << ")" << std::endl;
+        gctx.debug_kernel = nullptr;
+    }
 }
 
 /**
@@ -177,6 +184,44 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     clReleaseMemObject(result_buf);
 
     return (found_flag != 0);
+}
+
+/**
+ * 使用调试内核测试特定 nonce
+ */
+static bool RunDebugKernel(GpuMinerContext& gctx,
+                          const std::array<unsigned char,80>& header_le,
+                          uint32_t test_nonce,
+                          std::array<unsigned char,32>& out_hash)
+{
+    if (gctx.debug_kernel == nullptr) {
+        return false;
+    }
+    
+    cl_int err;
+    cl_mem header_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                       80, (void*)header_le.data(), &err);
+    cl_mem nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                      sizeof(uint32_t), &test_nonce, &err);
+    unsigned char result_init[32] = {0};
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                       32, result_init, &err);
+
+    clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
+    clSetKernelArg(gctx.debug_kernel, 1, sizeof(cl_mem), &nonce_buf);
+    clSetKernelArg(gctx.debug_kernel, 2, sizeof(cl_mem), &result_buf);
+
+    size_t gws = 1;
+    err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
+    clFinish(gctx.queue);
+
+    clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
+
+    clReleaseMemObject(header_buf);
+    clReleaseMemObject(nonce_buf);
+    clReleaseMemObject(result_buf);
+
+    return (err == CL_SUCCESS);
 }
 
 /**
@@ -357,6 +402,42 @@ static bool VerifyGenesisBlock()
             
         } catch (const std::exception& e) {
             std::cout << "CPU Test Error: " << e.what() << std::endl;
+        }
+        
+        // 测试5：GPU 调试内核直接测试
+        std::cout << "\n🔍 Test 5: GPU debug kernel direct test..." << std::endl;
+        if (gctx.debug_kernel != nullptr) {
+            std::array<unsigned char,32> gpu_debug_hash{};
+            bool debug_success = RunDebugKernel(gctx, header_le, 1379716, gpu_debug_hash);
+            
+            if (debug_success) {
+                std::cout << "GPU Debug Hash (LE): ";
+                for (unsigned char b : gpu_debug_hash) printf("%02x", b);
+                std::cout << std::endl;
+                
+                // 转换为大端序
+                std::string gpu_debug_be;
+                for (int i = 31; i >= 0; --i) {
+                    char buf[3];
+                    sprintf(buf, "%02x", gpu_debug_hash[i]);
+                    gpu_debug_be += buf;
+                }
+                std::cout << "GPU Debug Hash (BE): " << gpu_debug_be << std::endl;
+                std::cout << "Expected (BE): 00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f" << std::endl;
+                
+                bool gpu_debug_matches = (gpu_debug_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
+                std::cout << "GPU Debug Hash Match: " << (gpu_debug_matches ? "✅ YES" : "❌ NO") << std::endl;
+                
+                if (gpu_debug_matches) {
+                    std::cout << "🎉 GPU算法正确！问题可能在目标比较逻辑中。" << std::endl;
+                } else {
+                    std::cout << "❌ GPU算法与CPU不一致，需要进一步调试。" << std::endl;
+                }
+            } else {
+                std::cout << "❌ GPU调试内核执行失败。" << std::endl;
+            }
+        } else {
+            std::cout << "❌ GPU调试内核不可用。" << std::endl;
         }
         
         std::cout << "\n🏁 GPU Verification Result: ⚠️ PARTIAL" << std::endl;
