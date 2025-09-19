@@ -229,7 +229,7 @@ static bool VerifyGenesisBlock()
         
         // 序列化区块头 (little-endian)
         std::vector<unsigned char> ser;
-        VectorWriter(ser, 0, genesis);
+        VectorWriter(ser, 0, genesis.nVersion, genesis.hashPrevBlock, genesis.hashMerkleRoot, genesis.nTime, genesis.nBits, genesis.nNonce);
         std::array<unsigned char,80> header_le{};
         std::memcpy(header_le.data(), ser.data(), std::min<size_t>(80, ser.size()));
         
@@ -335,7 +335,7 @@ int main(int argc, char* argv[])
 
         // 序列化区块头 (little-endian)
         std::vector<unsigned char> ser;
-        VectorWriter(ser, 0, block);
+        VectorWriter(ser, 0, block.nVersion, block.hashPrevBlock, block.hashMerkleRoot, block.nTime, block.nBits, block.nNonce);
         std::array<unsigned char,80> header_le{};
         std::memcpy(header_le.data(), ser.data(), std::min<size_t>(80, ser.size()));
 
