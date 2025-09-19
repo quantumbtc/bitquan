@@ -152,12 +152,16 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     cl_mem target_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        32, (void*)target_be.data(), &err);
 
-    cl_mem found_flag_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
-                                           sizeof(uint32_t), nullptr, &err);
-    cl_mem found_nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
-                                           sizeof(uint32_t), nullptr, &err);
-    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
-                                       32, nullptr, &err);
+    // Initialize buffers with zero values
+    uint32_t init_zero = 0;
+    unsigned char init_hash[32] = {0};
+    
+    cl_mem found_flag_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                           sizeof(uint32_t), &init_zero, &err);
+    cl_mem found_nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                           sizeof(uint32_t), &init_zero, &err);
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                       32, init_hash, &err);
 
     clSetKernelArg(gctx.kernel, 0, sizeof(cl_mem), &header_buf);
     clSetKernelArg(gctx.kernel, 1, sizeof(cl_mem), &base_nonce_buf);
@@ -167,7 +171,13 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     clSetKernelArg(gctx.kernel, 5, sizeof(cl_mem), &result_buf);
 
     size_t gws = global_work_size;
-    std::cout << "[DEBUG] Enqueueing main kernel with global work size: " << gws << std::endl;
+    std::cout << "[DEBUG] Mining parameters:" << std::endl;
+    std::cout << "[DEBUG]   Start nonce: " << start_nonce << std::endl;
+    std::cout << "[DEBUG]   Work size: " << gws << std::endl;
+    std::cout << "[DEBUG]   Nonce range: " << start_nonce << " to " << (start_nonce + gws - 1) << std::endl;
+    std::cout << "[DEBUG]   Expected nonce 1379716 in range: " << 
+                 (1379716 >= start_nonce && 1379716 < start_nonce + gws ? "YES" : "NO") << std::endl;
+    std::cout << "[DEBUG] Enqueueing main kernel..." << std::endl;
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Main kernel execution failed with error: " << err << std::endl;

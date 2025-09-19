@@ -266,13 +266,21 @@ __kernel void randomq_mining_full(
         final_le[i] = final32[31 - i];
     }
 
-    // Compare final_le (little-endian) with target32 (little-endian) LSB->MSB
+    // Compare final_le (little-endian) with target32 (little-endian) 
+    // For little-endian comparison, we need to compare from MSB to LSB (index 31 to 0)
     bool meets_target = true;
     for (int i = 31; i >= 0; --i) {
         uchar hb = final_le[i];
         uchar tb = target32[i];
-        if (hb > tb) { meets_target = false; break; }
-        else if (hb < tb) break;
+        if (hb > tb) { 
+            meets_target = false; 
+            break; 
+        }
+        else if (hb < tb) {
+            meets_target = true;
+            break; 
+        }
+        // if equal, continue to next byte
     }
 
     if (meets_target) {
@@ -291,7 +299,12 @@ __kernel void randomq_debug_nonce(
     __global const uint* test_nonce, // specific nonce to test
     __global uchar* result_hash // 32 bytes output hash
 ) {
-    // Immediate test - write pattern before doing anything else
+    uint gid = get_global_id(0);
+    
+    // Only first work item does the actual computation
+    if (gid != 0) return;
+    
+    // First write a test pattern to verify buffer access
     result_hash[0] = 0xAA;
     result_hash[1] = 0xBB;
     result_hash[2] = 0xCC;
@@ -299,33 +312,46 @@ __kernel void randomq_debug_nonce(
     result_hash[4] = 0xEE;
     result_hash[5] = 0xFF;
     
-    uint gid = get_global_id(0);
-    
-    // Write global ID to later positions
+    // Write global ID
     result_hash[8] = (uchar)(gid & 0xFF);
     result_hash[9] = (uchar)((gid >> 8) & 0xFF);
     result_hash[10] = (uchar)((gid >> 16) & 0xFF);
     result_hash[11] = (uchar)((gid >> 24) & 0xFF);
     
-    // Only first work item continues with parameter tests
-    if (gid != 0) return;
-    
-    // Step 3: Test if we can read input nonce (careful access)
-    if (test_nonce != 0) {  // Check pointer is not null
+    // Now try to actually compute the hash
+    if (test_nonce != 0 && header80 != 0) {
         ulong current_nonce = (ulong)(*test_nonce);
-        if (current_nonce == 1379716) {
-            result_hash[8] = 0xEE;
-            result_hash[9] = 0xFF;
-        }
-    }
-    
-    // Step 4: Test if we can read header data (careful access)
-    if (header80 != 0) {  // Check pointer is not null
-        if (header80[0] == 0x01) {
-            result_hash[10] = 0x11;
-        }
-        if (header80[1] == 0x00) {
-            result_hash[11] = 0x22;
+        
+        // Build local header and inject nonce
+        __private uchar local_header[80];
+        for (int i = 0; i < 80; ++i) local_header[i] = header80[i];
+        
+        // Inject nonce (little-endian)
+        local_header[76] = (uchar)((current_nonce) & 0xFF);
+        local_header[77] = (uchar)((current_nonce >> 8) & 0xFF);
+        local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
+        local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
+        
+        // Step 1: first SHA256(header)
+        __private uchar first_sha[32];
+        sha256_general(local_header, 80u, first_sha);
+        
+        // Step 2: CRandomQ
+        CRANDOMQ_CTX ctx;
+        CRandomQ_Reset(&ctx);
+        CRandomQ_SetRounds(&ctx, (ulong)8192);
+        CRandomQ_SetNonce(&ctx, current_nonce);
+        CRandomQ_Write(&ctx, first_sha, 32u);
+        __private uchar randomq_out[32];
+        CRandomQ_Finalize(&ctx, randomq_out);
+        
+        // Step 3: final SHA256(randomq_out)
+        __private uchar final32[32];
+        sha256_general(randomq_out, 32u, final32);
+        
+        // Convert to little-endian and store
+        for (int i = 0; i < 32; ++i) {
+            result_hash[i] = final32[31 - i];
         }
     }
 }
