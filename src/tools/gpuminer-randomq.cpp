@@ -90,11 +90,15 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     if (err != CL_SUCCESS || num_platforms == 0)
         throw std::runtime_error("No OpenCL platform found");
 
-    // 选择第一个 GPU
+    // Try GPU first, then fallback to CPU if GPU doesn't work
     cl_uint num_devices = 0;
     err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &gctx.device, &num_devices);
-    if (err != CL_SUCCESS || num_devices == 0)
-        throw std::runtime_error("No OpenCL GPU device found");
+    if (err != CL_SUCCESS || num_devices == 0) {
+        std::cout << "[GPU] No GPU device found, trying CPU..." << std::endl;
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &gctx.device, &num_devices);
+        if (err != CL_SUCCESS || num_devices == 0)
+            throw std::runtime_error("No OpenCL device found");
+    }
 
     // Print GPU device information
     char device_name[256] = {0};
@@ -115,6 +119,16 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
     if (device_type & CL_DEVICE_TYPE_GPU) std::cout << "GPU ";
     if (device_type & CL_DEVICE_TYPE_ACCELERATOR) std::cout << "ACCELERATOR ";
     std::cout << std::endl;
+    
+    // Check for Intel GPU and warn about known issues
+    std::string vendor_str(device_vendor);
+    std::string device_str(device_name);
+    if (vendor_str.find("Intel") != std::string::npos) {
+        std::cout << "[GPU] WARNING: Intel GPU detected. Intel OpenCL drivers have known issues with complex kernels." << std::endl;
+        if (device_str.find("Iris") != std::string::npos || device_str.find("UHD") != std::string::npos) {
+            std::cout << "[GPU] INFO: This is an integrated GPU. Performance may be limited." << std::endl;
+        }
+    }
 
     gctx.ctx = clCreateContext(nullptr, 1, &gctx.device, nullptr, nullptr, &err);
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to create OpenCL context");
@@ -403,6 +417,16 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     }
     
     std::cout << "[DEBUG] Calling clFinish..." << std::endl;
+    
+    // Intel GPU workaround: flush before finish
+    clFlush(gctx.queue);
+    
+    // Wait for the event specifically instead of just clFinish
+    err = clWaitForEvents(1, &kernel_event);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] clWaitForEvents failed: " << err << std::endl;
+    }
+    
     clFinish(gctx.queue);
     std::cout << "[DEBUG] clFinish completed" << std::endl;
     
@@ -518,6 +542,105 @@ static bool TestSimpleKernel(GpuMinerContext& gctx)
     
     clReleaseMemObject(output_buf);
     clReleaseKernel(simple_kernel);
+    return success;
+}
+
+/**
+ * Test minimal kernel for Intel GPU compatibility
+ */
+static bool TestMinimalKernel(GpuMinerContext& gctx)
+{
+    std::cout << "[DEBUG] Testing minimal kernel (Intel GPU compatible)..." << std::endl;
+    
+    cl_int err;
+    cl_kernel minimal_kernel = clCreateKernel(gctx.program, "minimal_test", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to create minimal test kernel: " << err << std::endl;
+        return false;
+    }
+    
+    // Create output buffer for 4 uint32 values
+    uint32_t init_data[4] = {0, 0, 0, 0};
+    
+    cl_mem output_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                       4 * sizeof(uint32_t), init_data, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to create minimal output buffer: " << err << std::endl;
+        clReleaseKernel(minimal_kernel);
+        return false;
+    }
+    
+    // Set kernel argument
+    err = clSetKernelArg(minimal_kernel, 0, sizeof(cl_mem), &output_buf);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to set minimal kernel arg: " << err << std::endl;
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(minimal_kernel);
+        return false;
+    }
+    
+    // Execute kernel with 4 work items
+    size_t gws = 4;
+    cl_event event;
+    err = clEnqueueNDRangeKernel(gctx.queue, minimal_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, &event);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to execute minimal kernel: " << err << std::endl;
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(minimal_kernel);
+        return false;
+    }
+    
+    // Intel GPU workaround
+    clFlush(gctx.queue);
+    err = clWaitForEvents(1, &event);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] clWaitForEvents failed for minimal kernel: " << err << std::endl;
+    }
+    clFinish(gctx.queue);
+    
+    // Check execution status
+    cl_int exec_status;
+    err = clGetEventInfo(event, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &exec_status, nullptr);
+    if (err == CL_SUCCESS) {
+        std::cout << "[DEBUG] Minimal kernel execution status: ";
+        switch(exec_status) {
+            case CL_QUEUED: std::cout << "CL_QUEUED"; break;
+            case CL_SUBMITTED: std::cout << "CL_SUBMITTED"; break;
+            case CL_RUNNING: std::cout << "CL_RUNNING"; break;
+            case CL_COMPLETE: std::cout << "CL_COMPLETE"; break;
+            default: std::cout << "Error status: " << exec_status; break;
+        }
+        std::cout << std::endl;
+    }
+    
+    // Read result
+    uint32_t result[4];
+    err = clEnqueueReadBuffer(gctx.queue, output_buf, CL_TRUE, 0, 4 * sizeof(uint32_t), result, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to read minimal kernel result: " << err << std::endl;
+        clReleaseEvent(event);
+        clReleaseMemObject(output_buf);
+        clReleaseKernel(minimal_kernel);
+        return false;
+    }
+    
+    // Check result (should be gid + 0x12345678)
+    bool success = true;
+    std::cout << "[DEBUG] Minimal kernel results: ";
+    for (int i = 0; i < 4; ++i) {
+        std::cout << std::hex << result[i] << " ";
+        uint32_t expected = i + 0x12345678;
+        if (result[i] != expected) {
+            success = false;
+        }
+    }
+    std::cout << std::dec << std::endl;
+    std::cout << "[DEBUG] Expected: 12345678 12345679 1234567a 1234567b" << std::endl;
+    std::cout << "[DEBUG] Minimal kernel test: " << (success ? "PASSED" : "FAILED") << std::endl;
+    
+    clReleaseEvent(event);
+    clReleaseMemObject(output_buf);
+    clReleaseKernel(minimal_kernel);
     return success;
 }
 
@@ -722,8 +845,13 @@ static bool VerifyGenesisBlock()
             std::cout << "CPU Test Error: " << e.what() << std::endl;
         }
         
-        // 测试5：简单内核测试
-        std::cout << "\nTest 5: Simple kernel test..." << std::endl;
+        // 测试5：最小内核测试
+        std::cout << "\nTest 5: Minimal kernel test..." << std::endl;
+        bool minimal_test_passed = TestMinimalKernel(gctx);
+        std::cout << "Minimal kernel test result: " << (minimal_test_passed ? "PASSED" : "FAILED") << std::endl;
+        
+        // 测试5b：简单内核测试
+        std::cout << "\nTest 5b: Simple kernel test..." << std::endl;
         bool simple_test_passed = TestSimpleKernel(gctx);
         std::cout << "Simple kernel test result: " << (simple_test_passed ? "PASSED" : "FAILED") << std::endl;
         

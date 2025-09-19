@@ -346,10 +346,15 @@ __kernel void randomq_debug_nonce(
 // Ultra-simple test kernel to verify basic GPU functionality
 __kernel void simple_test(__global uchar* output) {
     uint gid = get_global_id(0);
-    if (gid == 0) {
-        output[0] = 0xDE;
-        output[1] = 0xAD;
-        output[2] = 0xBE;
-        output[3] = 0xEF;
-    }
+    // Write pattern for all work items, not just gid==0
+    output[gid * 4 + 0] = 0xDE;
+    output[gid * 4 + 1] = 0xAD;
+    output[gid * 4 + 2] = 0xBE;
+    output[gid * 4 + 3] = 0xEF;
+}
+
+// Even simpler kernel for Intel GPU compatibility
+__kernel void minimal_test(__global uint* output) {
+    uint gid = get_global_id(0);
+    output[gid] = gid + 0x12345678;
 }
