@@ -484,19 +484,29 @@ static bool VerifyGenesisBlock()
                 std::cout << std::endl;
                 
                 // Analyze the debug pattern
-                if (gpu_debug_hash[0] == 0x00 && gpu_debug_hash[1] == 0x00) {
-                    std::cout << "DEBUG: Kernel did not execute or failed to write to output buffer" << std::endl;
-                } else if (gpu_debug_hash[0] == 0xAA) {
-                    std::cout << "DEBUG: Kernel executed and can write to output buffer" << std::endl;
-                } else if (gpu_debug_hash[0] == 0xBB && gpu_debug_hash[1] == 0xCC) {
-                    std::cout << "DEBUG: Kernel executed and successfully read nonce parameter" << std::endl;
-                    if (gpu_debug_hash[2] == 0xDD && gpu_debug_hash[3] == 0xEE) {
-                        std::cout << "DEBUG: Kernel also successfully read header data" << std::endl;
+                uint32_t gid = (uint32_t)gpu_debug_hash[0] | 
+                              ((uint32_t)gpu_debug_hash[1] << 8) |
+                              ((uint32_t)gpu_debug_hash[2] << 16) |
+                              ((uint32_t)gpu_debug_hash[3] << 24);
+                
+                std::cout << "DEBUG: Global ID written by kernel: " << gid << std::endl;
+                
+                if (gid == 0 && gpu_debug_hash[4] == 0xAA) {
+                    std::cout << "DEBUG: Kernel executed successfully with work item 0" << std::endl;
+                    if (gpu_debug_hash[4] == 0xBB && gpu_debug_hash[5] == 0xCC) {
+                        std::cout << "DEBUG: Kernel successfully read nonce parameter" << std::endl;
+                    } else {
+                        std::cout << "DEBUG: Kernel failed to read correct nonce parameter" << std::endl;
+                    }
+                    if (gpu_debug_hash[6] == 0xDD && gpu_debug_hash[7] == 0xEE) {
+                        std::cout << "DEBUG: Kernel successfully read header data" << std::endl;
                     } else {
                         std::cout << "DEBUG: Kernel failed to read header data correctly" << std::endl;
                     }
+                } else if (gid == 0) {
+                    std::cout << "DEBUG: Work item 0 executed but test pattern not found" << std::endl;
                 } else {
-                    std::cout << "DEBUG: Kernel executed but produced unexpected output" << std::endl;
+                    std::cout << "DEBUG: Unexpected global ID or kernel execution issue" << std::endl;
                 }
                 
                 // 转换为大端序

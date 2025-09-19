@@ -292,24 +292,32 @@ __kernel void randomq_debug_nonce(
     __global uchar* result_hash // 32 bytes output hash
 ) {
     uint gid = get_global_id(0);
-    if (gid != 0) return; // Only first work item does the work
     
-    // Step 1: Just test if we can write to output buffer
-    for (int i = 0; i < 32; ++i) {
-        result_hash[i] = (uchar)(0xAA); // Test pattern to verify kernel execution
+    // Write global ID to first 4 bytes to see if kernel executes
+    result_hash[0] = (uchar)(gid & 0xFF);
+    result_hash[1] = (uchar)((gid >> 8) & 0xFF);
+    result_hash[2] = (uchar)((gid >> 16) & 0xFF);
+    result_hash[3] = (uchar)((gid >> 24) & 0xFF);
+    
+    // Only first work item continues with the test
+    if (gid != 0) return;
+    
+    // Step 1: Test pattern to verify kernel execution
+    for (int i = 4; i < 32; ++i) {
+        result_hash[i] = (uchar)(0xAA); // Test pattern
     }
     
     // Step 2: Test if we can read input data
     ulong current_nonce = (ulong)(*test_nonce);
     if (current_nonce == 1379716) {
         // Mark that we successfully read the correct nonce
-        result_hash[0] = 0xBB;
-        result_hash[1] = 0xCC;
+        result_hash[4] = 0xBB;
+        result_hash[5] = 0xCC;
     }
     
     // Step 3: Test if we can read header data
     if (header80[0] == 0x01 && header80[1] == 0x00) { // Version = 1 in little-endian
-        result_hash[2] = 0xDD;
-        result_hash[3] = 0xEE;
+        result_hash[6] = 0xDD;
+        result_hash[7] = 0xEE;
     }
 }
