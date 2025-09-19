@@ -299,16 +299,16 @@ __kernel void randomq_debug_nonce(
     result_hash[2] = (uchar)((gid >> 16) & 0xFF);
     result_hash[3] = (uchar)((gid >> 24) & 0xFF);
     
-    // Only first work item continues with the test
-    if (gid != 0) return;
-    
-    // Step 1: Very simple test - just write one byte
+    // Step 1: Very simple test - just write one byte (all work items)
     result_hash[4] = 0xAA;
     
     // Step 2: Write a few more bytes to test loop
     result_hash[5] = 0xBB;
     result_hash[6] = 0xCC;
     result_hash[7] = 0xDD;
+    
+    // Only first work item continues with parameter tests
+    if (gid != 0) return;
     
     // Step 3: Test if we can read input nonce (careful access)
     if (test_nonce != 0) {  // Check pointer is not null
