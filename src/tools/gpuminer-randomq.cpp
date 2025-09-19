@@ -466,6 +466,22 @@ static bool VerifyGenesisBlock()
                 std::cout << std::dec;
                 std::cout << std::endl;
                 
+                // Analyze the debug pattern
+                if (gpu_debug_hash[0] == 0x00 && gpu_debug_hash[1] == 0x00) {
+                    std::cout << "DEBUG: Kernel did not execute or failed to write to output buffer" << std::endl;
+                } else if (gpu_debug_hash[0] == 0xAA) {
+                    std::cout << "DEBUG: Kernel executed and can write to output buffer" << std::endl;
+                } else if (gpu_debug_hash[0] == 0xBB && gpu_debug_hash[1] == 0xCC) {
+                    std::cout << "DEBUG: Kernel executed and successfully read nonce parameter" << std::endl;
+                    if (gpu_debug_hash[2] == 0xDD && gpu_debug_hash[3] == 0xEE) {
+                        std::cout << "DEBUG: Kernel also successfully read header data" << std::endl;
+                    } else {
+                        std::cout << "DEBUG: Kernel failed to read header data correctly" << std::endl;
+                    }
+                } else {
+                    std::cout << "DEBUG: Kernel executed but produced unexpected output" << std::endl;
+                }
+                
                 // 转换为大端序
                 std::string gpu_debug_be;
                 for (int i = 31; i >= 0; --i) {
@@ -478,12 +494,6 @@ static bool VerifyGenesisBlock()
                 
                 bool gpu_debug_matches = (gpu_debug_be == "00000c62fac2d483d65c37331a3a73c6f315de2541e7384e94e36d3b1491604f");
                 std::cout << "GPU Debug Hash Match: " << (gpu_debug_matches ? "YES" : "NO") << std::endl;
-                
-                if (gpu_debug_matches) {
-                    std::cout << "GPU algorithm is correct! Problem might be in target comparison logic." << std::endl;
-                } else {
-                    std::cout << "GPU algorithm differs from CPU, needs further debugging." << std::endl;
-                }
             } else {
                 std::cout << "GPU debug kernel execution failed." << std::endl;
             }

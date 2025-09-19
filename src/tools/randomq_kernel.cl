@@ -294,31 +294,22 @@ __kernel void randomq_debug_nonce(
     uint gid = get_global_id(0);
     if (gid != 0) return; // Only first work item does the work
     
-    // First, let's just test if we can write to the output buffer
+    // Step 1: Just test if we can write to output buffer
     for (int i = 0; i < 32; ++i) {
-        result_hash[i] = (uchar)(0xAA); // Test pattern
+        result_hash[i] = (uchar)(0xAA); // Test pattern to verify kernel execution
     }
     
-    // If we get here and see the test pattern, the kernel is working
-    // Let's add the actual computation step by step
-    
+    // Step 2: Test if we can read input data
     ulong current_nonce = (ulong)(*test_nonce);
-
-    // build local header and inject nonce (header80 provided as little-endian)
-    __private uchar local_header[80];
-    for (int i = 0; i < 80; ++i) local_header[i] = header80[i];
-    // nonce in header bytes 76..79 little-endian
-    local_header[76] = (uchar)((current_nonce) & 0xFF);
-    local_header[77] = (uchar)((current_nonce >> 8) & 0xFF);
-    local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
-    local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
-
-    // Step 1: first SHA256(header) - let's test this first
-    __private uchar first_sha[32];
-    sha256_general(local_header, 80u, first_sha);
+    if (current_nonce == 1379716) {
+        // Mark that we successfully read the correct nonce
+        result_hash[0] = 0xBB;
+        result_hash[1] = 0xCC;
+    }
     
-    // For now, just return the first SHA256 result (but converted to LE)
-    for (int i = 0; i < 32; ++i) {
-        result_hash[i] = first_sha[31 - i];
+    // Step 3: Test if we can read header data
+    if (header80[0] == 0x01 && header80[1] == 0x00) { // Version = 1 in little-endian
+        result_hash[2] = 0xDD;
+        result_hash[3] = 0xEE;
     }
 }
