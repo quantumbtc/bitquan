@@ -170,7 +170,11 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     clSetKernelArg(gctx.kernel, 5, sizeof(cl_mem), &result_buf);
 
     size_t gws = global_work_size;
+    std::cout << "[DEBUG] Enqueueing main kernel with global work size: " << gws << std::endl;
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Main kernel execution failed with error: " << err << std::endl;
+    }
     clFinish(gctx.queue);
 
     clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
@@ -225,9 +229,18 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
         return false;
     }
 
-    clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
-    clSetKernelArg(gctx.debug_kernel, 1, sizeof(cl_mem), &nonce_buf);
-    clSetKernelArg(gctx.debug_kernel, 2, sizeof(cl_mem), &result_buf);
+    err = clSetKernelArg(gctx.debug_kernel, 0, sizeof(cl_mem), &header_buf);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to set kernel arg 0 (header): " << err << std::endl;
+    }
+    err = clSetKernelArg(gctx.debug_kernel, 1, sizeof(cl_mem), &nonce_buf);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to set kernel arg 1 (nonce): " << err << std::endl;
+    }
+    err = clSetKernelArg(gctx.debug_kernel, 2, sizeof(cl_mem), &result_buf);
+    if (err != CL_SUCCESS) {
+        std::cout << "[DEBUG] Failed to set kernel arg 2 (result): " << err << std::endl;
+    }
 
     size_t gws = 1;
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
@@ -338,9 +351,11 @@ static bool VerifyGenesisBlock()
         gpu_hash.fill(0);
         found_nonce = 0;
         
+        std::cout << "[DEBUG] About to run main mining kernel with work size 1024..." << std::endl;
         bool found = RunKernelBatch(gctx, header_le, test_start_nonce,
                                     target_be, 1024,
                                     gpu_hash, found_nonce);
+        std::cout << "[DEBUG] RunKernelBatch returned: " << (found ? "FOUND" : "NOT_FOUND") << std::endl;
         
         std::cout << "GPU Found Expected Nonce: " << (found && found_nonce == 1379716 ? "YES" : "NO") << std::endl;
         std::cout << "Found Nonce: " << found_nonce << " (expected: 1379716)" << std::endl;
@@ -455,8 +470,10 @@ static bool VerifyGenesisBlock()
         // 测试5：GPU 调试内核直接测试
         std::cout << "\nTest 5: GPU debug kernel direct test..." << std::endl;
         if (gctx.debug_kernel != nullptr) {
+            std::cout << "[DEBUG] Debug kernel is available, attempting to run..." << std::endl;
             std::array<unsigned char,32> gpu_debug_hash{};
             bool debug_success = RunDebugKernel(gctx, header_le, 1379716, gpu_debug_hash);
+            std::cout << "[DEBUG] RunDebugKernel returned: " << (debug_success ? "SUCCESS" : "FAILURE") << std::endl;
             
             if (debug_success) {
                 std::cout << "GPU Debug Hash (LE): ";
