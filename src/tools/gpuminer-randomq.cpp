@@ -227,24 +227,41 @@ static bool VerifyGenesisBlock()
         // 创建实际的创世区块
         CBlock genesis = CreateActualGenesisBlock();
         
+        std::cout << "📋 Genesis Block Info:" << std::endl;
+        std::cout << "  Version: " << genesis.nVersion << std::endl;
+        std::cout << "  Time: " << genesis.nTime << std::endl;
+        std::cout << "  Bits: 0x" << std::hex << genesis.nBits << std::dec << std::endl;
+        std::cout << "  Nonce: " << genesis.nNonce << std::endl;
+        std::cout << "  PrevBlock: " << genesis.hashPrevBlock.GetHex() << std::endl;
+        std::cout << "  MerkleRoot: " << genesis.hashMerkleRoot.GetHex() << std::endl;
+        
         // 序列化区块头 (little-endian)
         std::vector<unsigned char> ser;
         VectorWriter(ser, 0, genesis.nVersion, genesis.hashPrevBlock, genesis.hashMerkleRoot, genesis.nTime, genesis.nBits, genesis.nNonce);
         std::array<unsigned char,80> header_le{};
         std::memcpy(header_le.data(), ser.data(), std::min<size_t>(80, ser.size()));
         
+        std::cout << "🔍 Serialized Header (80 bytes): ";
+        for (int i = 0; i < 80; ++i) {
+            printf("%02x", header_le[i]);
+        }
+        std::cout << std::endl;
+        
         auto target_be = TargetFromBits(genesis.nBits);
+        std::cout << "🎯 Target: ";
+        for (unsigned char b : target_be) printf("%02x", b);
+        std::cout << std::endl;
         
         std::array<unsigned char,32> gpu_hash{};
         uint32_t found_nonce = 0;
         
-        // 测试 GPU 是否能找到预期的 nonce
+        // 测试1：小范围搜索（包含预期的 nonce）
+        std::cout << "\n🔍 Test 1: Small range search around expected nonce..." << std::endl;
         uint32_t test_start_nonce = 1379710; // 从接近预期 nonce 开始
         bool found = RunKernelBatch(gctx, header_le, test_start_nonce,
                                     target_be, 1024,
                                     gpu_hash, found_nonce);
         
-        std::cout << "GPU Execution Time: " << "N/A" << " μs" << std::endl;
         std::cout << "GPU Found Expected Nonce: " << (found && found_nonce == 1379716 ? "✅ YES" : "❌ NO") << std::endl;
         std::cout << "Found Nonce: " << found_nonce << " (expected: 1379716)" << std::endl;
         
@@ -272,7 +289,37 @@ static bool VerifyGenesisBlock()
             }
         }
         
-        std::cout << "🏁 GPU Verification Result: ⚠️ PARTIAL" << std::endl;
+        // 测试2：更大的范围搜索
+        std::cout << "\n🔍 Test 2: Larger range search..." << std::endl;
+        test_start_nonce = 0;
+        found = RunKernelBatch(gctx, header_le, test_start_nonce,
+                               target_be, 10000, // 更大的工作大小
+                               gpu_hash, found_nonce);
+        
+        std::cout << "GPU Found Any Solution: " << (found ? "✅ YES" : "❌ NO") << std::endl;
+        if (found) {
+            std::cout << "Found Nonce: " << found_nonce << std::endl;
+            std::cout << "GPU Hash: ";
+            for (unsigned char b : gpu_hash) printf("%02x", b);
+            std::cout << std::endl;
+        }
+        
+        // 测试3：直接测试预期的 nonce
+        std::cout << "\n🔍 Test 3: Direct test of expected nonce..." << std::endl;
+        test_start_nonce = 1379716; // 直接测试预期的 nonce
+        found = RunKernelBatch(gctx, header_le, test_start_nonce,
+                               target_be, 1, // 只测试一个 nonce
+                               gpu_hash, found_nonce);
+        
+        std::cout << "Direct Test Result: " << (found ? "✅ FOUND" : "❌ NOT FOUND") << std::endl;
+        if (found) {
+            std::cout << "Found Nonce: " << found_nonce << std::endl;
+            std::cout << "GPU Hash: ";
+            for (unsigned char b : gpu_hash) printf("%02x", b);
+            std::cout << std::endl;
+        }
+        
+        std::cout << "\n🏁 GPU Verification Result: ⚠️ PARTIAL" << std::endl;
         std::cout << "✅ Genesis block creation is correct, but GPU needs debugging" << std::endl;
         std::cout << "❌ GPU mining function may have issues finding the solution" << std::endl;
         std::cout << "🔧 Check GPU kernel implementation and work distribution" << std::endl;

@@ -141,7 +141,7 @@ typedef struct {
 } CRANDOMQ_CTX;
 
 inline void CRandomQ_Reset(__private CRANDOMQ_CTX* ctx) {
-    for (int i = 0; i < 25; ++i) ctx->state[i] = (ulong)0;
+    for (int i = 0; i < 25; ++i) ctx->state[i] = RANDOMQ_CONSTANTS[i];
     ctx->nonce = (ulong)0;
     ctx->rounds = (ulong)8192;
 }
