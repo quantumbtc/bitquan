@@ -293,7 +293,7 @@ __kernel void randomq_mining_full(
     }
 }
 
-// Debug kernel to test specific nonce and return hash
+// Simple debug kernel to test basic functionality
 __kernel void randomq_debug_nonce(
     __global const uchar* header80, // 80 bytes header (little-endian)
     __global const uint* test_nonce, // specific nonce to test
@@ -301,10 +301,7 @@ __kernel void randomq_debug_nonce(
 ) {
     uint gid = get_global_id(0);
     
-    // Only first work item does the actual computation
-    if (gid != 0) return;
-    
-    // First write a test pattern to verify buffer access
+    // IMMEDIATE write test pattern - this should ALWAYS work
     result_hash[0] = 0xAA;
     result_hash[1] = 0xBB;
     result_hash[2] = 0xCC;
@@ -312,46 +309,36 @@ __kernel void randomq_debug_nonce(
     result_hash[4] = 0xEE;
     result_hash[5] = 0xFF;
     
-    // Write global ID
+    // Write global ID at positions 8-11
     result_hash[8] = (uchar)(gid & 0xFF);
     result_hash[9] = (uchar)((gid >> 8) & 0xFF);
     result_hash[10] = (uchar)((gid >> 16) & 0xFF);
     result_hash[11] = (uchar)((gid >> 24) & 0xFF);
     
-    // Now try to actually compute the hash
-    if (test_nonce != 0 && header80 != 0) {
-        ulong current_nonce = (ulong)(*test_nonce);
-        
-        // Build local header and inject nonce
-        __private uchar local_header[80];
-        for (int i = 0; i < 80; ++i) local_header[i] = header80[i];
-        
-        // Inject nonce (little-endian)
-        local_header[76] = (uchar)((current_nonce) & 0xFF);
-        local_header[77] = (uchar)((current_nonce >> 8) & 0xFF);
-        local_header[78] = (uchar)((current_nonce >> 16) & 0xFF);
-        local_header[79] = (uchar)((current_nonce >> 24) & 0xFF);
-        
-        // Step 1: first SHA256(header)
-        __private uchar first_sha[32];
-        sha256_general(local_header, 80u, first_sha);
-        
-        // Step 2: CRandomQ
-        CRANDOMQ_CTX ctx;
-        CRandomQ_Reset(&ctx);
-        CRandomQ_SetRounds(&ctx, (ulong)8192);
-        CRandomQ_SetNonce(&ctx, current_nonce);
-        CRandomQ_Write(&ctx, first_sha, 32u);
-        __private uchar randomq_out[32];
-        CRandomQ_Finalize(&ctx, randomq_out);
-        
-        // Step 3: final SHA256(randomq_out)
-        __private uchar final32[32];
-        sha256_general(randomq_out, 32u, final32);
-        
-        // Convert to little-endian and store
-        for (int i = 0; i < 32; ++i) {
-            result_hash[i] = final32[31 - i];
+    // Only first work item continues with more complex operations
+    if (gid != 0) return;
+    
+    // Test parameter reading
+    if (test_nonce != 0) {
+        uint nonce = *test_nonce;
+        if (nonce == 1379716) {
+            result_hash[12] = 0x17; // Mark that we read the correct nonce
+            result_hash[13] = 0x39;
+            result_hash[14] = 0x71;
+            result_hash[15] = 0x16;
         }
     }
+    
+    // Test header reading
+    if (header80 != 0) {
+        if (header80[0] == 0x01) {  // Version should be 1
+            result_hash[16] = 0x01;
+        }
+        if (header80[1] == 0x00) {  // Next byte should be 0
+            result_hash[17] = 0x00;
+        }
+    }
+    
+    // For now, don't do the full computation - just test basic functionality
+    // Once we confirm the kernel is executing, we can add the full RandomQ computation
 }

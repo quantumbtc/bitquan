@@ -123,12 +123,46 @@ static void InitOpenCL(GpuMinerContext& gctx, const std::string& kernel_path)
         throw std::runtime_error("OpenCL build failed:\n" + log);
     }
 
+    // List all available kernels in the program for debugging
+    size_t num_kernels = 0;
+    err = clCreateKernelsInProgram(gctx.program, 0, nullptr, &num_kernels);
+    if (err == CL_SUCCESS && num_kernels > 0) {
+        std::cout << "[GPU] Found " << num_kernels << " kernels in program:" << std::endl;
+        std::vector<cl_kernel> kernels(num_kernels);
+        err = clCreateKernelsInProgram(gctx.program, num_kernels, kernels.data(), nullptr);
+        if (err == CL_SUCCESS) {
+            for (size_t i = 0; i < num_kernels; ++i) {
+                size_t name_size = 0;
+                clGetKernelInfo(kernels[i], CL_KERNEL_FUNCTION_NAME, 0, nullptr, &name_size);
+                std::string kernel_name(name_size, '\0');
+                clGetKernelInfo(kernels[i], CL_KERNEL_FUNCTION_NAME, name_size, kernel_name.data(), nullptr);
+                std::cout << "[GPU]   " << i << ": " << kernel_name.c_str() << std::endl;
+                clReleaseKernel(kernels[i]);
+            }
+        }
+    }
+
     gctx.kernel = clCreateKernel(gctx.program, "randomq_mining_full", &err);
-    if (err != CL_SUCCESS) throw std::runtime_error("Failed to create kernel");
+    if (err != CL_SUCCESS) {
+        std::cout << "[GPU] Failed to create main kernel (error: " << err << ")" << std::endl;
+        throw std::runtime_error("Failed to create kernel");
+    }
     
     gctx.debug_kernel = clCreateKernel(gctx.program, "randomq_debug_nonce", &err);
     if (err != CL_SUCCESS) {
         std::cout << "[GPU] Warning: Failed to create debug kernel (error: " << err << ")" << std::endl;
+        std::cout << "[GPU] Debug kernel error details: ";
+        switch(err) {
+            case CL_INVALID_PROGRAM: std::cout << "CL_INVALID_PROGRAM"; break;
+            case CL_INVALID_PROGRAM_EXECUTABLE: std::cout << "CL_INVALID_PROGRAM_EXECUTABLE"; break;
+            case CL_INVALID_KERNEL_NAME: std::cout << "CL_INVALID_KERNEL_NAME"; break;
+            case CL_INVALID_KERNEL_DEFINITION: std::cout << "CL_INVALID_KERNEL_DEFINITION"; break;
+            case CL_INVALID_VALUE: std::cout << "CL_INVALID_VALUE"; break;
+            case CL_OUT_OF_RESOURCES: std::cout << "CL_OUT_OF_RESOURCES"; break;
+            case CL_OUT_OF_HOST_MEMORY: std::cout << "CL_OUT_OF_HOST_MEMORY"; break;
+            default: std::cout << "Unknown error code: " << err; break;
+        }
+        std::cout << std::endl;
         gctx.debug_kernel = nullptr;
     }
 }
@@ -181,6 +215,24 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Main kernel execution failed with error: " << err << std::endl;
+        std::cout << "[DEBUG] Error details: ";
+        switch(err) {
+            case CL_INVALID_PROGRAM_EXECUTABLE: std::cout << "CL_INVALID_PROGRAM_EXECUTABLE"; break;
+            case CL_INVALID_COMMAND_QUEUE: std::cout << "CL_INVALID_COMMAND_QUEUE"; break;
+            case CL_INVALID_KERNEL: std::cout << "CL_INVALID_KERNEL"; break;
+            case CL_INVALID_CONTEXT: std::cout << "CL_INVALID_CONTEXT"; break;
+            case CL_INVALID_KERNEL_ARGS: std::cout << "CL_INVALID_KERNEL_ARGS"; break;
+            case CL_INVALID_WORK_DIMENSION: std::cout << "CL_INVALID_WORK_DIMENSION"; break;
+            case CL_INVALID_WORK_GROUP_SIZE: std::cout << "CL_INVALID_WORK_GROUP_SIZE"; break;
+            case CL_INVALID_WORK_ITEM_SIZE: std::cout << "CL_INVALID_WORK_ITEM_SIZE"; break;
+            case CL_INVALID_GLOBAL_OFFSET: std::cout << "CL_INVALID_GLOBAL_OFFSET"; break;
+            case CL_OUT_OF_RESOURCES: std::cout << "CL_OUT_OF_RESOURCES"; break;
+            case CL_MEM_OBJECT_ALLOCATION_FAILURE: std::cout << "CL_MEM_OBJECT_ALLOCATION_FAILURE"; break;
+            case CL_INVALID_EVENT_WAIT_LIST: std::cout << "CL_INVALID_EVENT_WAIT_LIST"; break;
+            case CL_OUT_OF_HOST_MEMORY: std::cout << "CL_OUT_OF_HOST_MEMORY"; break;
+            default: std::cout << "Unknown error code: " << err; break;
+        }
+        std::cout << std::endl;
     }
     clFinish(gctx.queue);
 
@@ -263,6 +315,24 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     err = clEnqueueNDRangeKernel(gctx.queue, gctx.debug_kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Kernel execution failed with error: " << err << std::endl;
+        std::cout << "[DEBUG] Error details: ";
+        switch(err) {
+            case CL_INVALID_PROGRAM_EXECUTABLE: std::cout << "CL_INVALID_PROGRAM_EXECUTABLE"; break;
+            case CL_INVALID_COMMAND_QUEUE: std::cout << "CL_INVALID_COMMAND_QUEUE"; break;
+            case CL_INVALID_KERNEL: std::cout << "CL_INVALID_KERNEL"; break;
+            case CL_INVALID_CONTEXT: std::cout << "CL_INVALID_CONTEXT"; break;
+            case CL_INVALID_KERNEL_ARGS: std::cout << "CL_INVALID_KERNEL_ARGS"; break;
+            case CL_INVALID_WORK_DIMENSION: std::cout << "CL_INVALID_WORK_DIMENSION"; break;
+            case CL_INVALID_WORK_GROUP_SIZE: std::cout << "CL_INVALID_WORK_GROUP_SIZE"; break;
+            case CL_INVALID_WORK_ITEM_SIZE: std::cout << "CL_INVALID_WORK_ITEM_SIZE"; break;
+            case CL_INVALID_GLOBAL_OFFSET: std::cout << "CL_INVALID_GLOBAL_OFFSET"; break;
+            case CL_OUT_OF_RESOURCES: std::cout << "CL_OUT_OF_RESOURCES"; break;
+            case CL_MEM_OBJECT_ALLOCATION_FAILURE: std::cout << "CL_MEM_OBJECT_ALLOCATION_FAILURE"; break;
+            case CL_INVALID_EVENT_WAIT_LIST: std::cout << "CL_INVALID_EVENT_WAIT_LIST"; break;
+            case CL_OUT_OF_HOST_MEMORY: std::cout << "CL_OUT_OF_HOST_MEMORY"; break;
+            default: std::cout << "Unknown error code: " << err; break;
+        }
+        std::cout << std::endl;
         clReleaseMemObject(header_buf);
         clReleaseMemObject(nonce_buf);
         clReleaseMemObject(result_buf);
@@ -526,11 +596,28 @@ static bool VerifyGenesisBlock()
                                   ((uint32_t)gpu_debug_hash[11] << 24);
                     std::cout << "DEBUG: Global ID written at positions 8-11: " << gid << std::endl;
                     
+                    // Check nonce reading test (positions 12-15)
+                    if (gpu_debug_hash[12] == 0x17 && gpu_debug_hash[13] == 0x39 && 
+                        gpu_debug_hash[14] == 0x71 && gpu_debug_hash[15] == 0x16) {
+                        std::cout << "DEBUG: Nonce reading test PASSED - kernel can read test_nonce parameter" << std::endl;
+                    } else {
+                        std::cout << "DEBUG: Nonce reading test FAILED" << std::endl;
+                    }
+                    
+                    // Check header reading test (positions 16-17)
+                    if (gpu_debug_hash[16] == 0x01 && gpu_debug_hash[17] == 0x00) {
+                        std::cout << "DEBUG: Header reading test PASSED - kernel can read header80 parameter" << std::endl;
+                    } else {
+                        std::cout << "DEBUG: Header reading test FAILED" << std::endl;
+                        std::cout << "DEBUG: Expected header[16]=0x01, got 0x" << std::hex << (int)gpu_debug_hash[16] << std::endl;
+                        std::cout << "DEBUG: Expected header[17]=0x00, got 0x" << std::hex << (int)gpu_debug_hash[17] << std::dec << std::endl;
+                    }
+                    
                 } else {
                     std::cout << "DEBUG: Buffer was modified but not as expected" << std::endl;
                     std::cout << "DEBUG: Expected pattern: AA BB CC DD EE FF" << std::endl;
                     std::cout << "DEBUG: Got pattern: ";
-                    for (int i = 0; i < 12; ++i) {
+                    for (int i = 0; i < 18; ++i) {
                         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)gpu_debug_hash[i] << " ";
                     }
                     std::cout << std::dec << std::endl;
