@@ -152,15 +152,12 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     cl_mem target_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        32, (void*)target_be.data(), &err);
 
-    uint32_t found_flag = 0;
-    cl_mem found_flag_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                           sizeof(uint32_t), &found_flag, &err);
-    uint32_t found_nonce = 0;
-    cl_mem found_nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                           sizeof(uint32_t), &found_nonce, &err);
-    unsigned char result_init[32] = {0};
-    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                       32, result_init, &err);
+    cl_mem found_flag_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
+                                           sizeof(uint32_t), nullptr, &err);
+    cl_mem found_nonce_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
+                                           sizeof(uint32_t), nullptr, &err);
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
+                                       32, nullptr, &err);
 
     clSetKernelArg(gctx.kernel, 0, sizeof(cl_mem), &header_buf);
     clSetKernelArg(gctx.kernel, 1, sizeof(cl_mem), &base_nonce_buf);
@@ -177,6 +174,11 @@ static bool RunKernelBatch(GpuMinerContext& gctx,
     }
     clFinish(gctx.queue);
 
+    // Initialize output variables before reading
+    out_hash.fill(0);
+    out_found_nonce = 0;
+    uint32_t found_flag = 0;
+    
     clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
     clEnqueueReadBuffer(gctx.queue, found_nonce_buf, CL_TRUE, 0, sizeof(uint32_t), &out_found_nonce, 0, nullptr, nullptr);
     clEnqueueReadBuffer(gctx.queue, found_flag_buf, CL_TRUE, 0, sizeof(uint32_t), &found_flag, 0, nullptr, nullptr);
@@ -219,9 +221,8 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
         return false;
     }
     
-    unsigned char result_init[32] = {0};
-    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                       32, result_init, &err);
+    cl_mem result_buf = clCreateBuffer(gctx.ctx, CL_MEM_WRITE_ONLY,
+                                       32, nullptr, &err);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Result buffer creation failed with error: " << err << std::endl;
         clReleaseMemObject(header_buf);
@@ -254,6 +255,9 @@ static bool RunDebugKernel(GpuMinerContext& gctx,
     
     clFinish(gctx.queue);
 
+    // Initialize output before reading
+    out_hash.fill(0);
+    
     err = clEnqueueReadBuffer(gctx.queue, result_buf, CL_TRUE, 0, 32, out_hash.data(), 0, nullptr, nullptr);
     if (err != CL_SUCCESS) {
         std::cout << "[DEBUG] Buffer read failed with error: " << err << std::endl;
