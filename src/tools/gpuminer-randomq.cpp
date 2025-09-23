@@ -328,7 +328,10 @@ static UniValue DoRpcRequest(const std::string& method, const UniValue& params_a
     return reply;
 }
 
-static UniValue RpcCallWaitParams(const std::string& method, const UniValue& params_arr)
+} // namespace
+
+// RPC functions accessible outside the anonymous namespace
+UniValue RpcCallWaitParams(const std::string& method, const UniValue& params_arr)
 {
     const bool fWait = gArgs.GetBoolArg("-rpcwait", false);
     const int timeout = gArgs.GetIntArg("-rpcwaittimeout", 0);
@@ -346,17 +349,15 @@ static UniValue RpcCallWaitParams(const std::string& method, const UniValue& par
     }
 }
 
-static UniValue RpcCallWait(const std::string& method, const std::vector<std::string>& params)
+UniValue RpcCallWait(const std::string& method, const std::vector<std::string>& params)
 {
     UniValue arr(UniValue::VARR);
     for (const auto& p : params) arr.push_back(p);
     return RpcCallWaitParams(method, arr);
 }
 
-} // namespace
-
 // Block template building (same as cpuminer)
-static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::string& tmpl_hex_out)
+bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::string& tmpl_hex_out)
 {
     const UniValue hexv = gbt_res.find_value("hex");
     if (!hexv.isNull()) {
@@ -421,6 +422,14 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
     // Finalize merkle root
     block.hashMerkleRoot = BlockMerkleRoot(block);
     return true;
+}
+
+// Encode block to hex string (similar to EncodeHexTx)
+std::string EncodeHexBlk(const CBlock& block)
+{
+    DataStream ssBlk;
+    ssBlk << TX_WITH_WITNESS(block);
+    return HexStr(ssBlk);
 }
 
 // GPU mining function
