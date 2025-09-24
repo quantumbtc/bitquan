@@ -34,6 +34,7 @@
 #include <thread>
 #include <vector>
 #include <cstring>
+#include <span>
 
 #ifdef OPENCL_FOUND
 #include <CL/cl.h>
@@ -272,7 +273,7 @@ __kernel void randomq_kernel(
     __global const uchar* header80,
     uint nonce_base,
     __global const uchar* target,
-    __global int* found_flag,
+    __global volatile int* found_flag,
     __global uint* found_nonce
 ) {
     uint gid = get_global_id(0);
@@ -280,7 +281,7 @@ __kernel void randomq_kernel(
     // NOTE: Placeholder: compute RandomQ(header, nonce) and compare to target
     // For now, do nothing here; real implementation should port RandomQ to OpenCL
     if (0) {
-        if (atomic_cmpxchg(found_flag, 0, 1) == 0) {
+        if (atom_cmpxchg(found_flag, 0, 1) == 0) {
             *found_nonce = nonce;
         }
     }
