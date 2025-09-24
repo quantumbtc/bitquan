@@ -458,6 +458,9 @@ static void MinerLoop()
 			for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s);
 			continue;
 		}
+		// Print full result JSON once per fetch
+		tfm::format(std::cout, "[GBT-Result] %s\n", res.write().c_str());
+		std::cout.flush();
 		CBlock block; std::string tmpl_hex; if (!BuildBlockFromGBT(res, block, tmpl_hex)) { tfm::format(std::cout, "[Warn] Failed to build block from template, retrying...\n"); std::cout.flush(); continue; }
 		block.hashMerkleRoot = BlockMerkleRoot(block);
 
