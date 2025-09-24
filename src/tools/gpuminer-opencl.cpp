@@ -66,6 +66,7 @@ static void SetupMinerArgs(ArgsManager& argsman)
 	argsman.AddArg("-maxtries=<n>", "Max nonce attempts before refreshing template (default: 1000000)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-gpu=<n>", "Select OpenCL device index (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-list-gpus", "List OpenCL platforms/devices and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-cpu-fallback", "Force CPU mining loop (bypass OpenCL)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
 namespace {
@@ -334,8 +335,9 @@ static OpenCLContext CreateOpenCL(unsigned wanted_index)
 static void MinerLoop()
 {
 	const std::string payout = gArgs.GetArg("-address", ""); if (payout.empty()) throw std::runtime_error("-address is required");
-	const bool list_only = gArgs.GetBoolArg("-list-gpus", false);
-	const unsigned gpu_index = (unsigned)gArgs.GetIntArg("-gpu", 0);
+    const bool list_only = gArgs.GetBoolArg("-list-gpus", false);
+    const unsigned gpu_index = (unsigned)gArgs.GetIntArg("-gpu", 0);
+    const bool force_cpu = gArgs.GetBoolArg("-cpu-fallback", false);
 
 	if (list_only) { ListOpenCLDevices(); return; }
 
@@ -348,14 +350,17 @@ static void MinerLoop()
 		UniValue caps(UniValue::VARR); caps.push_back("coinbasetxn");
 		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules); req.pushKV("capabilities", caps);
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
-		UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
+        tfm::format(std::cout, "[Info] Fetching block template...\n"); std::cout.flush();
+        UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
 		const UniValue err = gbt.find_value("error"); if (!err.isNull()) throw std::runtime_error(err.write());
 		const UniValue res = gbt.find_value("result"); if (res.isNull()) { for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s); continue; }
-		CBlock block; std::string tmpl_hex; if (!BuildBlockFromGBT(res, block, tmpl_hex)) continue;
+        CBlock block; std::string tmpl_hex; if (!BuildBlockFromGBT(res, block, tmpl_hex)) { tfm::format(std::cout, "[Warn] Failed to build block from template, retrying...\n"); std::cout.flush(); continue; }
 		block.hashMerkleRoot = BlockMerkleRoot(block);
 
 #ifdef OPENCL_FOUND
-		OpenCLContext clctx = CreateOpenCL(gpu_index);
+        if (!force_cpu) {
+        tfm::format(std::cout, "[Info] Launching OpenCL kernel on GPU %u...\n", gpu_index); std::cout.flush();
+        OpenCLContext clctx = CreateOpenCL(gpu_index);
 		cl_int errc = 0;
         unsigned char header[80];
         std::vector<unsigned char> header_vec;
@@ -380,13 +385,15 @@ static void MinerLoop()
 		clSetKernelArg(clctx.kernel, 3, sizeof(d_found_flag), &d_found_flag);
 		clSetKernelArg(clctx.kernel, 4, sizeof(d_found_nonce), &d_found_nonce);
 		size_t global = 262144; // placeholder work size
-		clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &global, nullptr, 0, nullptr, nullptr);
-		clFinish(clctx.queue);
+        cl_int qerr = clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &global, nullptr, 0, nullptr, nullptr);
+        if (qerr != CL_SUCCESS) { tfm::format(std::cout, "[Error] clEnqueueNDRangeKernel failed: %d\n", (int)qerr); std::cout.flush(); }
+        clFinish(clctx.queue);
 		int found = 0; clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
 		uint32_t found_nonce = 0; if (found) clEnqueueReadBuffer(clctx.queue, d_found_nonce, CL_TRUE, 0, sizeof(found_nonce), &found_nonce, 0, nullptr, nullptr);
 		clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
 		ReleaseOpenCL(clctx);
-		if (found) { block.nNonce = found_nonce; }
+        if (found) { block.nNonce = found_nonce; tfm::format(std::cout, "[Found] Nonce=%u via OpenCL\n", (unsigned)found_nonce); std::cout.flush(); }
+        } else {
 #else
 		// Fallback: CPU check of a single batch (placeholder)
         const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
@@ -397,6 +404,8 @@ static void MinerLoop()
 			arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
 			if (!neg && !of && target != 0 && UintToArith256(h) <= target) break; ++block.nNonce;
 		}
+#ifdef OPENCL_FOUND
+        }
 #endif
 
         std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
