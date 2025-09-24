@@ -33,6 +33,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cstring>
 
 #ifdef OPENCL_FOUND
 #include <CL/cl.h>
@@ -109,14 +110,14 @@ static UniValue DoRpcRequest(const std::string& method, const UniValue& params_a
 		port = rpcconnect_port;
 	}
 
-	ra ii_event_base base = obtain_event_base();
-	ra ii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
+    raii_event_base base = obtain_event_base();
+    raii_evhttp_connection evcon = obtain_evhttp_connection_base(base.get(), host, port);
 
 	const int timeout = gArgs.GetIntArg("-rpcclienttimeout", 900);
 	if (timeout > 0) evhttp_connection_set_timeout(evcon.get(), timeout);
 
-	HTTPReply response;
-	ra ii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
+    HTTPReply response;
+    raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
 	if (!req) throw std::runtime_error("create http request failed");
 
 	std::string auth = GetAuth();
@@ -170,6 +171,8 @@ static UniValue RpcCallWaitParams(const std::string& method, const UniValue& par
 		}
 	}
 }
+
+} // end anonymous namespace
 
 #ifdef OPENCL_FOUND
 static void ListOpenCLDevices()
@@ -354,11 +357,17 @@ static void MinerLoop()
 #ifdef OPENCL_FOUND
 		OpenCLContext clctx = CreateOpenCL(gpu_index);
 		cl_int errc = 0;
-		unsigned char header[80];
-		{
-			VectorWriter vw(header, 0, static_cast<const CBlockHeader&>(block));
-		}
-		cl_mem d_header = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(header), header, &errc);
+        unsigned char header[80];
+        std::vector<unsigned char> header_vec;
+        {
+            VectorWriter vw(header_vec, 0, static_cast<const CBlockHeader&>(block));
+        }
+        if (header_vec.size() < sizeof(header)) {
+            // Should not happen; ensure 80 bytes
+            throw std::runtime_error("serialized header too small");
+        }
+        std::memcpy(header, header_vec.data(), sizeof(header));
+        cl_mem d_header = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(header), header, &errc);
 		uint32_t nonce_base = block.nNonce;
 		cl_mem d_target = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY, 32, nullptr, &errc);
 		cl_mem d_found_flag = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_int), nullptr, &errc);
@@ -389,8 +398,8 @@ static void MinerLoop()
 		}
 #endif
 
-		std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
-		U niValue sub = RpcCall("submitblock", {sub_hex}); (void)sub;
+        std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
+        UniValue sub = RpcCall("submitblock", {sub_hex}); (void)sub;
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
 
