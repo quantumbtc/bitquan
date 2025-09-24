@@ -494,21 +494,43 @@ static void MinerLoop()
 			clSetKernelArg(clctx.kernel, 2, sizeof(d_target), &d_target);
 			clSetKernelArg(clctx.kernel, 3, sizeof(d_found_flag), &d_found_flag);
 			clSetKernelArg(clctx.kernel, 4, sizeof(d_found_nonce), &d_found_nonce);
-			size_t global = 262144; // placeholder work size
+			// Tuned defaults for better utilization
+			size_t global = (size_t)1048576; // 1<<20
+			size_t local  = (size_t)128;     // preferred work-group size
+			int batches  = 64;              // run multiple batches per template
+			double elapsed_ms = 0.0;
+			uint64_t total_work = 0;
+			int found = 0;
+			uint32_t found_nonce = 0;
 			auto t0 = std::chrono::high_resolution_clock::now();
-			cl_int qerr = clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &global, nullptr, 0, nullptr, nullptr);
-			if (qerr != CL_SUCCESS) { tfm::format(std::cout, "[Error] clEnqueueNDRangeKernel failed: %d\n", (int)qerr); std::cout.flush(); }
-			clFinish(clctx.queue);
+			for (int bi = 0; bi < batches && !g_stop.load(); ++bi) {
+				// Update nonce_base per batch
+				clSetKernelArg(clctx.kernel, 1, sizeof(nonce_base), &nonce_base);
+				cl_int qerr = clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+				if (qerr != CL_SUCCESS) {
+					tfm::format(std::cout, "[Error] clEnqueueNDRangeKernel failed: %d\n", (int)qerr);
+					std::cout.flush();
+					break;
+				}
+				clFinish(clctx.queue);
+				total_work += (uint64_t)global;
+				// Check found flag after each batch
+				clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
+				if (found) {
+					clEnqueueReadBuffer(clctx.queue, d_found_nonce, CL_TRUE, 0, sizeof(found_nonce), &found_nonce, 0, nullptr, nullptr);
+					break;
+				}
+				nonce_base += (uint32_t)global;
+			}
 			auto t1 = std::chrono::high_resolution_clock::now();
-			double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+			elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 			// Count hashes as number of work-items dispatched
-			window_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
-			total_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
-			int found = 0; clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
-			uint32_t found_nonce = 0; if (found) clEnqueueReadBuffer(clctx.queue, d_found_nonce, CL_TRUE, 0, sizeof(found_nonce), &found_nonce, 0, nullptr, nullptr);
+			window_hashes.fetch_add(total_work, std::memory_order_relaxed);
+			total_hashes.fetch_add(total_work, std::memory_order_relaxed);
 			// Print execution result summary
-			double hps = elapsed_ms > 0.0 ? ((double)global * 1000.0) / elapsed_ms : 0.0;
-			tfm::format(std::cout, "[OpenCL] work_items=%zu elapsed_ms=%.3f est_Hs=%.2f found=%d\n", (size_t)global, elapsed_ms, hps, found);
+			double hps = elapsed_ms > 0.0 ? ((double)total_work * 1000.0) / elapsed_ms : 0.0;
+			tfm::format(std::cout, "[OpenCL] work_items=%llu batches=%d elapsed_ms=%.3f est_Hs=%.2f found=%d\n",
+				(unsigned long long)total_work, batches, elapsed_ms, hps, found);
 			std::cout.flush();
 			clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
 			ReleaseOpenCL(clctx);
