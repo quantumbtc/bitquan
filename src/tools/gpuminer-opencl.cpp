@@ -270,10 +270,9 @@ struct OpenCLContext {
 };
 
 static const char* kOpenCLKernel = R"CLC(
-// Minimal double-SHA256 over 80-byte header with varying nonce at bytes 76..79.
-// This is for performance validation only; RandomQ step is omitted.
+// SHA256 -> RandomQ -> SHA256 OpenCL kernel (RandomQ simplified per CPU reference)
 
-// Rotate right
+// 32-bit rotate right
 inline uint rotr(uint x, uint n) { return (x >> n) | (x << (32 - n)); }
 
 inline void sha256_transform(const uchar* data, uint state[8]) {
@@ -288,7 +287,6 @@ inline void sha256_transform(const uchar* data, uint state[8]) {
         0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
     };
     uint w[64];
-    // Load 64-byte chunk (we will call twice for 80-byte header + padding)
     for (int i = 0; i < 16; ++i) {
         int j = i * 4;
         w[i] = ((uint)data[j] << 24) | ((uint)data[j+1] << 16) | ((uint)data[j+2] << 8) | ((uint)data[j+3]);
@@ -311,72 +309,144 @@ inline void sha256_transform(const uchar* data, uint state[8]) {
     state[0] += a; state[1] += b; state[2] += c; state[3] += d; state[4] += e; state[5] += f; state[6] += g; state[7] += h;
 }
 
+inline void sha256_bytes(const uchar* data, uint len, uchar out32[32]) {
+    uint H[8] = {
+        0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+        0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+    };
+    uint full = len / 64;
+    for (uint i = 0; i < full; ++i) sha256_transform(data + i*64, H);
+    uchar last[128];
+    uint rem = len % 64;
+    for (uint i = 0; i < rem; ++i) last[i] = data[full*64 + i];
+    last[rem] = 0x80;
+    uint pad = (rem + 1) <= 56 ? (56 - (rem + 1)) : (120 - (rem + 1));
+    for (uint i = 0; i < pad; ++i) last[rem + 1 + i] = 0;
+    ulong bitlen = (ulong)len * 8UL;
+    for (int i = 0; i < 8; ++i) last[rem + 1 + pad + i] = (uchar)((bitlen >> (56 - 8*i)) & 0xFF);
+    sha256_transform(last, H);
+    if (rem + 1 + pad + 8 > 64) sha256_transform(last + 64, H);
+    for (int i = 0; i < 8; ++i) {
+        out32[i*4+0] = (uchar)((H[i] >> 24) & 0xFF);
+        out32[i*4+1] = (uchar)((H[i] >> 16) & 0xFF);
+        out32[i*4+2] = (uchar)((H[i] >> 8) & 0xFF);
+        out32[i*4+3] = (uchar)(H[i] & 0xFF);
+    }
+}
+
+// RandomQ simplified implementation (matches CPU layout): state[25] of 64-bit
+inline void randomq_init(ulong state[25], const __constant ulong* consts) {
+    for (int i = 0; i < 25; ++i) state[i] = consts[i];
+}
+
+inline void randomq_mix_seed(ulong state[25], const uchar* seed, uint seed_len) {
+    uint offset = 0;
+    for (int i = 0; i < 25 && offset < seed_len; ++i) {
+        ulong chunk = 0UL;
+        for (int j = 0; j < 8 && offset + j < seed_len; ++j) {
+            chunk |= (ulong)seed[offset + j] << (j * 8);
+        }
+        state[i] ^= chunk;
+        offset += 8;
+    }
+}
+
+inline void randomq_round(ulong state[25], const __constant ulong* consts) {
+    for (int i = 0; i < 25; ++i) {
+        ulong s = state[i];
+        ulong rotated = (s << 13) | (s >> (64 - 13));
+        ulong next = state[(i + 1) % 25];
+        state[i] = rotated ^ next ^ (s + next);
+        state[i] += consts[i];
+    }
+    for (int i = 0; i < 25; i += 2) {
+        ulong temp = state[i];
+        state[i] = state[i] ^ state[(i + 1) % 25];
+        state[(i + 1) % 25] = state[(i + 1) % 25] ^ temp;
+    }
+}
+
+inline void randomq_finalize_hash(ulong state[25], uchar out32[32]) {
+    // Serialize 25*8 bytes little-endian and sha256 it
+    uchar buf[200];
+    for (int i = 0; i < 25; ++i) {
+        ulong v = state[i];
+        for (int j = 0; j < 8; ++j) buf[i*8 + j] = (uchar)((v >> (j * 8)) & 0xFF);
+    }
+    sha256_bytes(buf, 200, out32);
+}
+
+__constant ulong RANDOMQ_CONSTANTS[25] = {
+    0x6a09e667f3bcc908UL, 0xbb67ae8584caa73bUL, 0x3c6ef372fe94f82bUL,
+    0xa54ff53a5f1d36f1UL, 0x510e527fade682d1UL, 0x9b05688c2b3e6c1fUL,
+    0x1f83d9abfb41bd6bUL, 0x5be0cd19137e2179UL, 0x428a2f98d728ae22UL,
+    0x7137449123ef65cdUL, 0xb5c0fbcfec4d3b2fUL, 0xe9b5dba58189dbbcUL,
+    0x3956c25bf348b538UL, 0x59f111f1b605d019UL, 0x923f82a4af194f9bUL,
+    0xab1c5ed5da6d8118UL, 0xd807aa98a3030242UL, 0x12835b0145706fbeUL,
+    0x243185be4ee4b28cUL, 0x550c7dc3d5ffb4e2UL, 0x72be5d74f27b896fUL,
+    0x80deb1fe3b1696b1UL, 0x9bdc06a725c71235UL, 0xc19bf174cf692694UL,
+    0xe49b69c19ef14ad2UL
+};
+
 __kernel void randomq_kernel(
     __global const uchar* header80,
     uint nonce_base,
-    __global const uchar* target,
+    __global const uchar* target, // 32 bytes big-endian
     __global volatile int* found_flag,
     __global uint* found_nonce
 ) {
     uint gid = get_global_id(0);
     uint nonce = nonce_base + gid;
 
-    // Construct first 64 bytes block: header[0..63]
+    // First SHA256 over 80-byte header with nonce at 76..79 (LE)
     uchar chunk0[64];
     for (int i = 0; i < 64; ++i) chunk0[i] = header80[i];
-
-    // Second 64 bytes block: header[64..79] + nonce (LE) + padding
     uchar chunk1[64];
-    for (int i = 0; i < 12; ++i) chunk1[i] = header80[64 + i]; // bytes 64..75
-    // nonce little-endian into bytes 76..79
+    for (int i = 0; i < 12; ++i) chunk1[i] = header80[64 + i];
     chunk1[12] = (uchar)(nonce & 0xFF);
     chunk1[13] = (uchar)((nonce >> 8) & 0xFF);
     chunk1[14] = (uchar)((nonce >> 16) & 0xFF);
     chunk1[15] = (uchar)((nonce >> 24) & 0xFF);
-    // Padding for 80-byte message: append 0x80, then zeros, then length (80*8=640 bits)
-    // Now at offset 16.. are padding
     chunk1[16] = 0x80;
     for (int i = 17; i < 56; ++i) chunk1[i] = 0;
-    // 64-bit length in bits at the end (big-endian): 640 bits
-    ulong bitlen = (ulong)80 * 8UL; // 640
-    for (int i = 0; i < 8; ++i) {
-        chunk1[56 + i] = (uchar)((bitlen >> (56 - 8*i)) & 0xFF);
-    }
-
-    // Initial SHA256 state
-    uint H[8] = {
-        0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
-        0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
-    };
+    ulong bitlen = (ulong)80 * 8UL;
+    for (int i = 0; i < 8; ++i) chunk1[56 + i] = (uchar)((bitlen >> (56 - 8*i)) & 0xFF);
+    uint H[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
     sha256_transform(chunk0, H);
     sha256_transform(chunk1, H);
-
-    // Serialize H to 32 bytes big-endian, then perform second SHA256 over that
-    uchar mid[64];
-    for (int i = 0; i < 32; ++i) mid[i] = 0;
+    uchar first32[32];
     for (int i = 0; i < 8; ++i) {
-        mid[i*4+0] = (uchar)((H[i] >> 24) & 0xFF);
-        mid[i*4+1] = (uchar)((H[i] >> 16) & 0xFF);
-        mid[i*4+2] = (uchar)((H[i] >> 8) & 0xFF);
-        mid[i*4+3] = (uchar)(H[i] & 0xFF);
+        first32[i*4+0] = (uchar)((H[i] >> 24) & 0xFF);
+        first32[i*4+1] = (uchar)((H[i] >> 16) & 0xFF);
+        first32[i*4+2] = (uchar)((H[i] >> 8) & 0xFF);
+        first32[i*4+3] = (uchar)(H[i] & 0xFF);
     }
-    // Pad 32-byte message for second SHA256
-    mid[32] = 0x80;
-    for (int i = 33; i < 56; ++i) mid[i] = 0;
-    // length = 256 bits
-    ulong bitlen2 = (ulong)32 * 8UL;
-    for (int i = 0; i < 8; ++i) mid[56 + i] = (uchar)((bitlen2 >> (56 - 8*i)) & 0xFF);
 
-    uint H2[8] = {
-        0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
-        0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
-    };
-    sha256_transform(mid, H2);
+    // RandomQ: initialize, mix seed, mix nonce, run rounds, finalize to 32 bytes
+    ulong state[25];
+    randomq_init(state, RANDOMQ_CONSTANTS);
+    randomq_mix_seed(state, first32, 32);
+    state[0] ^= (ulong)nonce; // mix nonce
+    const uint ROUNDS = 8192U;
+    for (uint r = 0; r < ROUNDS; ++r) randomq_round(state, RANDOMQ_CONSTANTS);
+    uchar rq32[32];
+    randomq_finalize_hash(state, rq32);
 
-    // Compare to target (big-endian 32 bytes). For now we skip comparison and do not set found.
-    // This kernel is for performance validation; actual PoW will include RandomQ and target compare.
-    // Optionally, you can set a trivial condition to test found path:
-    // if ((H2[7] & 0xFFFF) == 0 && atom_cmpxchg(found_flag, 0, 1) == 0) *found_nonce = nonce;
+    // Final SHA256 over rq32
+    uchar final32[32];
+    sha256_bytes(rq32, 32, final32);
+
+    // Compare to target (big-endian)
+    int lt = 0, gt = 0;
+    for (int i = 0; i < 32; ++i) {
+        uchar h = final32[i];
+        uchar t = target[i];
+        if (h < t) { lt = 1; break; }
+        if (h > t) { gt = 1; break; }
+    }
+    if (lt && atom_cmpxchg(found_flag, 0, 1) == 0) {
+        *found_nonce = nonce;
+    }
 }
 )CLC";
 
@@ -459,8 +529,8 @@ static void MinerLoop()
 			continue;
 		}
 		// Print full result JSON once per fetch
-		tfm::format(std::cout, "[GBT-Result] %s\n", res.write().c_str());
-		std::cout.flush();
+		//tfm::format(std::cout, "[GBT-Result] %s\n", res.write().c_str());
+		//std::cout.flush();
 		CBlock block; std::string tmpl_hex; if (!BuildBlockFromGBT(res, block, tmpl_hex)) { tfm::format(std::cout, "[Warn] Failed to build block from template, retrying...\n"); std::cout.flush(); continue; }
 		block.hashMerkleRoot = BlockMerkleRoot(block);
 
@@ -486,6 +556,25 @@ static void MinerLoop()
 			cl_mem d_header = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(header), header, &errc);
 			uint32_t nonce_base = block.nNonce;
 			cl_mem d_target = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY, 32, nullptr, &errc);
+			// Build target bytes (big-endian) from compact nBits
+			// nBits: 1-byte exponent (E), 3-byte mantissa (M), target = M * 2^(8*(E-3))
+			{
+				uint32_t nBits = block.nBits;
+				uchar tbytes[32];
+				for (int i = 0; i < 32; ++i) tbytes[i] = 0;
+				uint m = nBits & 0x007FFFFF; // mantissa (assuming sign bit not used)
+				uint e = (nBits >> 24) & 0xFF; // exponent
+				// Place mantissa into big-endian array at position (e-3)
+				int pos = (int)e - 3;
+				if (pos < 0) pos = 0; if (pos > 29) pos = 29;
+				if (pos + 3 <= 32) {
+					tbytes[pos + 0] = (uchar)((m >> 16) & 0xFF);
+					tbytes[pos + 1] = (uchar)((m >> 8) & 0xFF);
+					tbytes[pos + 2] = (uchar)(m & 0xFF);
+				}
+				// Upload
+				clEnqueueWriteBuffer(clctx.queue, d_target, CL_TRUE, 0, 32, tbytes, 0, nullptr, nullptr);
+			}
 			cl_mem d_found_flag = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_int), nullptr, &errc);
 			cl_mem d_found_nonce = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_uint), nullptr, &errc);
 			cl_int zero = 0; clEnqueueWriteBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(zero), &zero, 0, nullptr, nullptr);
@@ -534,9 +623,26 @@ static void MinerLoop()
 			std::cout.flush();
 			clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
 			ReleaseOpenCL(clctx);
-			if (found) { block.nNonce = found_nonce; } else { continue; }
+			if (found) {
+				block.nNonce = found_nonce;
+				// Print found header info (using CPU hash for logging only)
+				{
+					const uint256 powhash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+					arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
+					tfm::format(std::cout,
+						"[Found] nonce=%u time=%u bits=%08x target=%s powhash=%s merkle=%s\n",
+						(unsigned)block.nNonce,
+						(unsigned)block.nTime,
+						(unsigned)block.nBits,
+						target.GetHex().c_str(),
+						powhash.GetHex().c_str(),
+						block.hashMerkleRoot.GetHex().c_str());
+					std::cout.flush();
+				}
+			} else {
+				continue;
+			}
 		} else
-#endif
 		{
 			// Fallback: CPU check of a single batch (placeholder)
 			const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
@@ -551,7 +657,20 @@ static void MinerLoop()
 		}
 
 		std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
-		UniValue sub = RpcCall("submitblock", {sub_hex}); (void)sub;
+		UniValue sub = RpcCall("submitblock", {sub_hex});
+		// Print raw submit result (robust)
+		{
+			const UniValue err = sub.find_value("error");
+			const UniValue resv = sub.find_value("result");
+			if (!err.isNull()) {
+				std::string emsg = err.isObject() && !err.find_value("message").isNull() ? err.find_value("message").get_str() : err.write();
+				tfm::format(std::cout, "[Submit] result=%s error=%s\n", resv.isNull() ? "null" : resv.write().c_str(), emsg.c_str());
+			} else {
+				tfm::format(std::cout, "[Submit] result=%s error=null\n", resv.isNull() ? "null" : resv.write().c_str());
+			}
+			tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
+			std::cout.flush();
+		}
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
 
