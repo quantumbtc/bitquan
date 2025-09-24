@@ -385,56 +385,13 @@ target_link_libraries(cpuminer-randomq
 )
 install_binary_component(cpuminer-randomq)
 
-# RandomQ GPU miner - Always build, with CUDA support if available
-message(STATUS "Configuring RandomQ GPU miner...")
-
-# Check for CUDA support
-include(CheckLanguage)
-check_language(CUDA)
-
-if(CMAKE_CUDA_COMPILER AND NOT CMAKE_CROSSCOMPILING)
-  # Enable CUDA language for native builds
-  enable_language(CUDA)
-  find_package(CUDAToolkit QUIET)
-  
-  if(CUDAToolkit_FOUND)
-    # CUDA-enabled version
-    add_executable(gpuminer-randomq
-      tools/gpuminer-randomq.cpp
-      tools/randomq_cuda_kernel.cu
-    )
-    
-    # Set CUDA properties
-    set_target_properties(gpuminer-randomq PROPERTIES
-      CUDA_ARCHITECTURES "50;60;70;75;80;86;89;90"
-      CUDA_STANDARD 17
-    )
-    
-    target_link_libraries(gpuminer-randomq
-      PRIVATE
-        core_interface
-        bitquantum_cli
-        bitquantum_common
-        bitquantum_util
-        libevent::core
-        libevent::extra
-        CUDA::cudart
-    )
-    
-    target_compile_definitions(gpuminer-randomq PRIVATE CUDA_FOUND)
-    message(STATUS "Building NVIDIA CUDA GPU miner")
-  else()
-    set(CMAKE_CUDA_COMPILER "")  # Reset for fallback
-  endif()
-endif()
-
-# Fallback: CPU-only version (always available)
-if(NOT CMAKE_CUDA_COMPILER OR CMAKE_CROSSCOMPILING OR NOT CUDAToolkit_FOUND)
-  add_executable(gpuminer-randomq
-    tools/gpuminer-randomq.cpp
+# OpenCL-based GPU miner (optional)
+find_package(OpenCL QUIET)
+if(OpenCL_FOUND)
+  add_executable(gpuminer-opencl
+    tools/gpuminer-opencl.cpp
   )
-  
-  target_link_libraries(gpuminer-randomq
+  target_link_libraries(gpuminer-opencl
     PRIVATE
       core_interface
       bitquantum_cli
@@ -442,20 +399,13 @@ if(NOT CMAKE_CUDA_COMPILER OR CMAKE_CROSSCOMPILING OR NOT CUDAToolkit_FOUND)
       bitquantum_util
       libevent::core
       libevent::extra
+      OpenCL::OpenCL
   )
-  
-  target_compile_definitions(gpuminer-randomq PRIVATE CPU_ONLY)
-  
-  if(CMAKE_CROSSCOMPILING)
-    message(STATUS "Building CPU-only GPU miner (cross-compiling)")
-  else()
-    message(STATUS "Building CPU-only GPU miner (CUDA not available)")
-  endif()
+  target_compile_definitions(gpuminer-opencl PRIVATE OPENCL_FOUND)
+  install_binary_component(gpuminer-opencl)
+else()
+  message(STATUS "OpenCL not found; gpuminer-opencl will not be built")
 endif()
-
-install_binary_component(gpuminer-randomq)
-
-
 
 if(BUILD_TX)
   add_executable(bitquantum-tx bitquantum-tx.cpp)
