@@ -386,25 +386,28 @@ target_link_libraries(cpuminer-randomq
 install_binary_component(cpuminer-randomq)
 
 # OpenCL-based GPU miner (optional)
-find_package(OpenCL QUIET)
-if(OpenCL_FOUND)
-  add_executable(gpuminer-opencl
-    tools/gpuminer-opencl.cpp
-  )
-  target_link_libraries(gpuminer-opencl
-    PRIVATE
-      core_interface
-      bitquantum_cli
-      bitquantum_common
-      bitquantum_util
-      libevent::core
-      libevent::extra
-      OpenCL::OpenCL
-  )
-  target_compile_definitions(gpuminer-opencl PRIVATE OPENCL_FOUND)
-  install_binary_component(gpuminer-opencl)
-else()
-  message(STATUS "OpenCL not found; gpuminer-opencl will not be built")
+option(BUILD_OPENCL_MINER "Build the OpenCL-based GPU miner" ON)
+if(BUILD_OPENCL_MINER)
+  find_package(OpenCL QUIET)
+  if(OpenCL_FOUND)
+    add_executable(gpuminer-opencl
+      tools/gpuminer-opencl.cpp
+    )
+    target_link_libraries(gpuminer-opencl
+      PRIVATE
+        core_interface
+        bitquantum_cli
+        bitquantum_common
+        bitquantum_util
+        libevent::core
+        libevent::extra
+        OpenCL::OpenCL
+    )
+    target_compile_definitions(gpuminer-opencl PRIVATE OPENCL_FOUND)
+    install_binary_component(gpuminer-opencl)
+  else()
+    message(STATUS "OpenCL not found; gpuminer-opencl will not be built")
+  endif()
 endif()
 
 if(BUILD_TX)
