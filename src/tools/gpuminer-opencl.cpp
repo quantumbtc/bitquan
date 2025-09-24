@@ -352,8 +352,21 @@ static void MinerLoop()
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
 		tfm::format(std::cout, "[Info] Fetching block template...\n"); std::cout.flush();
 		UniValue gbt = RpcCallWaitParams("getblocktemplate", params_arr);
-		const UniValue err = gbt.find_value("error"); if (!err.isNull()) throw std::runtime_error(err.write());
-		const UniValue res = gbt.find_value("result"); if (res.isNull()) { for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s); continue; }
+		const UniValue err = gbt.find_value("error");
+		if (!err.isNull() && !err.isFalse()) {
+			// Print full reply for diagnostics
+			tfm::format(std::cout, "[GBT-Error] %s\n", gbt.write().c_str());
+			std::cout.flush();
+			throw std::runtime_error(err.write());
+		}
+		const UniValue res = gbt.find_value("result");
+		if (res.isNull()) {
+			// Print full reply for diagnostics when result is missing/null
+			tfm::format(std::cout, "[GBT-Null] %s\n", gbt.write().c_str());
+			std::cout.flush();
+			for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s);
+			continue;
+		}
 		CBlock block; std::string tmpl_hex; if (!BuildBlockFromGBT(res, block, tmpl_hex)) { tfm::format(std::cout, "[Warn] Failed to build block from template, retrying...\n"); std::cout.flush(); continue; }
 		block.hashMerkleRoot = BlockMerkleRoot(block);
 
