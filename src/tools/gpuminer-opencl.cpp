@@ -400,7 +400,8 @@ static void MinerLoop()
 				window_hashes.fetch_add(1, std::memory_order_relaxed);
 				total_hashes.fetch_add(1, std::memory_order_relaxed);
 				arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
-				if (!neg && !of && target != 0 && UintToArith256(h) <= target) break; ++block.nNonce;
+				if (!neg && !of && target != 0 && UintToArith256(h) <= target) break;
+				++block.nNonce;
 			}
 		}
 
