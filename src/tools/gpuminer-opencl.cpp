@@ -641,9 +641,11 @@ static void MinerLoop()
 					std::cout.flush();
 				}
 			} else {
+				// Skip submit for this template; continue to fetch next
 				continue;
 			}
 		} else
+#endif
 		{
 			// Fallback: CPU check of a single batch (placeholder)
 			const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
