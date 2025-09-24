@@ -333,7 +333,6 @@ static OpenCLContext CreateOpenCL(unsigned wanted_index)
 static void MinerLoop()
 {
 	const std::string payout = gArgs.GetArg("-address", ""); if (payout.empty()) throw std::runtime_error("-address is required");
-	const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
 	const bool list_only = gArgs.GetBoolArg("-list-gpus", false);
 	const unsigned gpu_index = (unsigned)gArgs.GetIntArg("-gpu", 0);
 
@@ -389,6 +388,7 @@ static void MinerLoop()
 		if (found) { block.nNonce = found_nonce; }
 #else
 		// Fallback: CPU check of a single batch (placeholder)
+        const int maxtries = gArgs.GetIntArg("-maxtries", 1000000);
 		for (int i = 0; i < maxtries && !g_stop.load(); ++i) {
 			const uint256 h = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
 			window_hashes.fetch_add(1, std::memory_order_relaxed);
