@@ -388,29 +388,39 @@ install_binary_component(cpuminer-randomq)
 # OpenCL-based GPU miner (optional)
 option(BUILD_OPENCL_MINER "Build the OpenCL-based GPU miner" ON)
 if(BUILD_OPENCL_MINER)
-  if(CMAKE_CROSSCOMPILING)
-    message(STATUS "Cross-compiling detected; skipping gpuminer-opencl (requires native OpenCL SDK)")
+  # Allow cross-compiling if the user explicitly provides OpenCL include/library
+  # via -DOpenCL_INCLUDE_DIR=... -DOpenCL_LIBRARY=...
+  if(CMAKE_CROSSCOMPILING AND NOT (DEFINED OpenCL_INCLUDE_DIR AND DEFINED OpenCL_LIBRARY))
+    message(STATUS "Cross-compiling and OpenCL not provided; skipping gpuminer-opencl")
   else()
-  find_package(OpenCL QUIET)
-  if(OpenCL_FOUND)
-    add_executable(gpuminer-opencl
-      tools/gpuminer-opencl.cpp
-    )
-    target_link_libraries(gpuminer-opencl
-      PRIVATE
-        core_interface
-        bitquantum_cli
-        bitquantum_common
-        bitquantum_util
-        libevent::core
-        libevent::extra
-        OpenCL::OpenCL
-    )
-    target_compile_definitions(gpuminer-opencl PRIVATE OPENCL_FOUND)
-    install_binary_component(gpuminer-opencl)
-  else()
-    message(STATUS "OpenCL not found; gpuminer-opencl will not be built")
-  endif()
+    find_package(OpenCL QUIET)
+    if(OpenCL_FOUND OR (DEFINED OpenCL_INCLUDE_DIR AND DEFINED OpenCL_LIBRARY))
+      if(NOT OpenCL_FOUND)
+        # Create imported target from provided variables
+        add_library(OpenCL::OpenCL UNKNOWN IMPORTED)
+        set_target_properties(OpenCL::OpenCL PROPERTIES
+          IMPORTED_LOCATION "${OpenCL_LIBRARY}"
+          INTERFACE_INCLUDE_DIRECTORIES "${OpenCL_INCLUDE_DIR}"
+        )
+      endif()
+      add_executable(gpuminer-opencl
+        tools/gpuminer-opencl.cpp
+      )
+      target_link_libraries(gpuminer-opencl
+        PRIVATE
+          core_interface
+          bitquantum_cli
+          bitquantum_common
+          bitquantum_util
+          libevent::core
+          libevent::extra
+          OpenCL::OpenCL
+      )
+      target_compile_definitions(gpuminer-opencl PRIVATE OPENCL_FOUND)
+      install_binary_component(gpuminer-opencl)
+    else()
+      message(STATUS "OpenCL not found; gpuminer-opencl will not be built")
+    endif()
   endif()
 endif()
 
