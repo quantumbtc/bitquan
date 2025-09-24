@@ -560,17 +560,18 @@ static void MinerLoop()
 			// nBits: 1-byte exponent (E), 3-byte mantissa (M), target = M * 2^(8*(E-3))
 			{
 				uint32_t nBits = block.nBits;
-				uchar tbytes[32];
+				unsigned char tbytes[32];
 				for (int i = 0; i < 32; ++i) tbytes[i] = 0;
-				uint m = nBits & 0x007FFFFF; // mantissa (assuming sign bit not used)
-				uint e = (nBits >> 24) & 0xFF; // exponent
+				uint32_t m = nBits & 0x007FFFFF; // mantissa (assuming sign bit not used)
+				uint32_t e = (nBits >> 24) & 0xFF; // exponent
 				// Place mantissa into big-endian array at position (e-3)
 				int pos = (int)e - 3;
-				if (pos < 0) pos = 0; if (pos > 29) pos = 29;
+				if (pos < 0) pos = 0;
+				if (pos > 29) pos = 29;
 				if (pos + 3 <= 32) {
-					tbytes[pos + 0] = (uchar)((m >> 16) & 0xFF);
-					tbytes[pos + 1] = (uchar)((m >> 8) & 0xFF);
-					tbytes[pos + 2] = (uchar)(m & 0xFF);
+					tbytes[pos + 0] = (unsigned char)((m >> 16) & 0xFF);
+					tbytes[pos + 1] = (unsigned char)((m >> 8) & 0xFF);
+					tbytes[pos + 2] = (unsigned char)(m & 0xFF);
 				}
 				// Upload
 				clEnqueueWriteBuffer(clctx.queue, d_target, CL_TRUE, 0, 32, tbytes, 0, nullptr, nullptr);
