@@ -467,6 +467,12 @@ static void MinerLoop()
 #ifdef OPENCL_FOUND
 		if (!force_cpu) {
 			OpenCLContext clctx = CreateOpenCL(gpu_index);
+			// Print device name
+			char devname[256] = {0};
+			size_t _tmp_sz = 0;
+			clGetDeviceInfo(clctx.device, CL_DEVICE_NAME, sizeof(devname), devname, &_tmp_sz);
+			tfm::format(std::cout, "[OpenCL] Using device %u: %s\n", gpu_index, devname);
+			std::cout.flush();
 			cl_int errc = 0;
 			unsigned char header[80];
 			std::vector<unsigned char> header_vec;
@@ -489,14 +495,21 @@ static void MinerLoop()
 			clSetKernelArg(clctx.kernel, 3, sizeof(d_found_flag), &d_found_flag);
 			clSetKernelArg(clctx.kernel, 4, sizeof(d_found_nonce), &d_found_nonce);
 			size_t global = 262144; // placeholder work size
+			auto t0 = std::chrono::high_resolution_clock::now();
 			cl_int qerr = clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &global, nullptr, 0, nullptr, nullptr);
 			if (qerr != CL_SUCCESS) { tfm::format(std::cout, "[Error] clEnqueueNDRangeKernel failed: %d\n", (int)qerr); std::cout.flush(); }
 			clFinish(clctx.queue);
+			auto t1 = std::chrono::high_resolution_clock::now();
+			double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 			// Count hashes as number of work-items dispatched
 			window_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 			total_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 			int found = 0; clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
 			uint32_t found_nonce = 0; if (found) clEnqueueReadBuffer(clctx.queue, d_found_nonce, CL_TRUE, 0, sizeof(found_nonce), &found_nonce, 0, nullptr, nullptr);
+			// Print execution result summary
+			double hps = elapsed_ms > 0.0 ? ((double)global * 1000.0) / elapsed_ms : 0.0;
+			tfm::format(std::cout, "[OpenCL] work_items=%zu elapsed_ms=%.3f est_Hs=%.2f found=%d\n", (size_t)global, elapsed_ms, hps, found);
+			std::cout.flush();
 			clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
 			ReleaseOpenCL(clctx);
 			if (found) { block.nNonce = found_nonce; } else { continue; }
