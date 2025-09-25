@@ -701,7 +701,7 @@ static void MinerLoop()
                 // Build target bytes (big-endian) same as for device buffer
                 unsigned char tbytes_be[32];
                 {
-                    arith_uint256 atarget; bool neg=false2, of2=false; atarget.SetCompact(block.nBits, &neg, &of2);
+                    arith_uint256 atarget; bool neg=false, of2=false; atarget.SetCompact(block.nBits, &neg, &of2);
                     std::string thex = atarget.GetHex();
                     if (thex.size() < 64) thex = std::string(64 - thex.size(), '0') + thex;
                     for (int i = 0; i < 32; ++i) {
