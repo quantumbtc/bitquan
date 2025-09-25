@@ -634,10 +634,12 @@ static void MinerLoop()
 			ReleaseOpenCL(clctx);
 			if (found) {
 				block.nNonce = found_nonce;
-				// Print found header info (using CPU hash for logging only)
+				// CPU verification of PoW before submit
+				const uint256 powhash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
+				arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
+				bool meets = (!neg && !of && target != 0 && UintToArith256(powhash) <= target);
+				// Print found header info
 				{
-					const uint256 powhash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
-					arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
 					tfm::format(std::cout,
 						"[Found] nonce=%u time=%u bits=%08x target=%s powhash=%s merkle=%s\n",
 						(unsigned)block.nNonce,
@@ -647,6 +649,11 @@ static void MinerLoop()
 						powhash.GetHex().c_str(),
 						block.hashMerkleRoot.GetHex().c_str());
 					std::cout.flush();
+				}
+				if (!meets) {
+					tfm::format(std::cout, "[Skip] high-hash (CPU verify failed), continue...\n");
+					std::cout.flush();
+					continue;
 				}
 			} else {
 				// Skip submit for this template; continue to fetch next
