@@ -507,7 +507,9 @@ static void MinerLoop()
 
 	try {
 	while (!g_stop.load()) {
+		// Build GBT request with required segwit rule
 		UniValue rules(UniValue::VARR);
+		rules.push_back("segwit");
 		UniValue caps(UniValue::VARR); caps.push_back("coinbasetxn");
 		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules); req.pushKV("capabilities", caps);
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
@@ -518,6 +520,13 @@ static void MinerLoop()
 			// Print full reply for diagnostics
 			tfm::format(std::cout, "[GBT-Error] %s\n", gbt.write().c_str());
 			std::cout.flush();
+			// If node is not connected, backoff and retry instead of throwing
+			int code = err.isObject() && !err.find_value("code").isNull() ? err.find_value("code").getInt<int>() : 0;
+			std::string msg = err.isObject() && !err.find_value("message").isNull() ? err.find_value("message").get_str() : err.write();
+			if (code == -9 || msg.find("not connected") != std::string::npos) {
+				for (int i = 0; i < 5 && !g_stop.load(); ++i) std::this_thread::sleep_for(1s);
+				continue;
+			}
 			throw std::runtime_error(err.write());
 		}
 		const UniValue res = gbt.find_value("result");
