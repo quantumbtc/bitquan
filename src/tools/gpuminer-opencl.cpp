@@ -424,12 +424,17 @@ __kernel void randomq_kernel(
         first32[i*4+3] = (uchar)(H[i] & 0xFF);
     }
 
-    // RandomQ: initialize, mix seed, mix nonce, run rounds, finalize to 32 bytes
+    // RandomQ: match CPU implementation exactly
+    // CPU: Reset() -> Write(first32) -> SetNonce(nonce) -> Finalize()
     ulong state[25];
-    randomq_init(state, RANDOMQ_CONSTANTS);
-    randomq_mix_seed(state, first32, 32);
-    // CPU Write() performs one RandomQRound after mixing seed
-    randomq_round(state, RANDOMQ_CONSTANTS);
+    // Reset() - start with zero state
+    for (int i = 0; i < 25; ++i) state[i] = 0UL;
+    
+    // Write(first32) - mix input data and run one round
+    randomq_mix_seed(state, first32, 32); // Mix first32 as input data
+    randomq_round(state, RANDOMQ_CONSTANTS); // One round after input processing
+    
+    // Finalize() - mix nonce and run 8192 rounds
     state[0] ^= (ulong)nonce; // mix nonce
     const uint ROUNDS = 8192U;
     for (uint r = 0; r < ROUNDS; ++r) randomq_round(state, RANDOMQ_CONSTANTS);
