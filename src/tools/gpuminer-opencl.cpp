@@ -673,9 +673,6 @@ static void MinerLoop()
 			tfm::format(std::cout, "[OpenCL] work_items=%llu batches=%d elapsed_ms=%.3f est_Hs=%.2f found=%d\n",
 				(unsigned long long)total_work, batches, elapsed_ms, hps, found);
 			std::cout.flush();
-			if (d_debug) clReleaseMemObject(d_debug);
-			clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
-			ReleaseOpenCL(clctx);
 			if (found) {
 				block.nNonce = found_nonce;
 				// CPU verification of PoW before submit
@@ -694,13 +691,53 @@ static void MinerLoop()
 						block.hashMerkleRoot.GetHex().c_str());
 					std::cout.flush();
 				}
+				// If debug enabled, rerun kernel with single item on the same nonce and dump GPU+CPU intermediates
+				if (gpu_debug) {
+					uint32_t one_nonce_base = block.nNonce;
+					clSetKernelArg(clctx.kernel, 1, sizeof(one_nonce_base), &one_nonce_base);
+					size_t g1 = 1, l1 = 1;
+					clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &g1, &l1, 0, nullptr, nullptr);
+					clFinish(clctx.queue);
+					unsigned char dbg2[128];
+					if (d_debug) {
+						clEnqueueReadBuffer(clctx.queue, d_debug, CL_TRUE, 0, sizeof(dbg2), dbg2, 0, nullptr, nullptr);
+						auto hex16 = [&](const unsigned char* p){ std::string s; static const char* h="0123456789abcdef"; for(int i=0;i<16;++i){ unsigned char b=p[i]; s.push_back(h[b>>4]); s.push_back(h[b&0xF]); } return s; };
+						tfm::format(std::cout, "[GPU first32] %s\n", hex16(dbg2+0).c_str());
+						tfm::format(std::cout, "[GPU rq32]    %s\n", hex16(dbg2+56).c_str());
+						tfm::format(std::cout, "[GPU final32] %s\n", hex16(dbg2+88).c_str());
+						std::cout.flush();
+					}
+					// CPU counterparts
+					{
+						// Serialize header with nonce
+						std::vector<unsigned char> hb; VectorWriter(hb, 0, static_cast<const CBlockHeader&>(block));
+						// first32
+						CSHA256 sh1; sh1.Write(hb.data(), hb.size()); unsigned char c_first[32]; sh1.Finalize(c_first);
+						// RandomQ
+						unsigned char c_rq[32]; CRandomQ rq; rq.Reset(); rq.Write(std::span<const unsigned char>(c_first, 32)); rq.SetNonce(block.nNonce); rq.SetRounds(8192); rq.Finalize(c_rq);
+						// final32
+						CSHA256 sh2; sh2.Write(c_rq, 32); unsigned char c_final[32]; sh2.Finalize(c_final);
+						auto hex16 = [&](const unsigned char* p){ std::string s; static const char* h="0123456789abcdef"; for(int i=0;i<16;++i){ unsigned char b=p[i]; s.push_back(h[b>>4]); s.push_back(h[b&0xF]); } return s; };
+						tfm::format(std::cout, "[CPU first32] %s\n", hex16(c_first).c_str());
+						tfm::format(std::cout, "[CPU rq32]    %s\n", hex16(c_rq).c_str());
+						tfm::format(std::cout, "[CPU final32] %s\n", hex16(c_final).c_str());
+						std::cout.flush();
+					}
+				}
 				if (!meets) {
 					tfm::format(std::cout, "[Skip] high-hash (CPU verify failed), continue...\n");
 					std::cout.flush();
+					// clean up resources before continue
+					if (d_debug) clReleaseMemObject(d_debug);
+					clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
+					ReleaseOpenCL(clctx);
 					continue;
 				}
 			} else {
 				// Skip submit for this template; continue to fetch next
+				if (d_debug) clReleaseMemObject(d_debug);
+				clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
+				ReleaseOpenCL(clctx);
 				continue;
 			}
 		} else
@@ -733,6 +770,10 @@ static void MinerLoop()
 			tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
 			std::cout.flush();
 		}
+		// release OpenCL resources after submission
+		if (d_debug) clReleaseMemObject(d_debug);
+		clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
+		ReleaseOpenCL(clctx);
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
 
