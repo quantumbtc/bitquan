@@ -448,14 +448,14 @@ __kernel void randomq_kernel(
     }
 
     // RandomQ: match CPU implementation exactly
-    // CPU: Reset() -> Write(first32) -> SetNonce(nonce) -> Finalize()
+    // CPU: Reset() -> Write(first32) -> Finalize() (with nonce and rounds set)
     ulong state[25];
     // Reset() - start with zero state
     for (int i = 0; i < 25; ++i) state[i] = 0UL;
     
-    // Write(first32) - mix input data and run one round
+    // Write(first32) - mix input data and run one round (like CPU Write method)
     randomq_mix_seed(state, first32, 32); // Mix first32 as input data
-    randomq_round(state, RANDOMQ_CONSTANTS); // One round after input processing
+    randomq_round(state, RANDOMQ_CONSTANTS); // One round after input processing (like CPU)
     
     // Finalize() - mix nonce and run 8192 rounds
     state[0] ^= (ulong)nonce; // mix nonce
@@ -486,8 +486,8 @@ __kernel void randomq_kernel(
         for (int i = 0; i < 32; ++i) debug_buf[88 + i] = final32[i];
     }
 
-    // Compare using arith_uint256 logic (like CPU verification)
-    // Convert final32 to uint256 (little-endian interpretation)
+    // Compare using arith_uint256 logic (matches node verification exactly)
+    // Convert final32 to uint256 (little-endian interpretation) - same as UintToArith256
     ulong hash_parts[4] = {0};
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 8; ++j) {
@@ -495,7 +495,7 @@ __kernel void randomq_kernel(
         }
     }
     
-    // Convert target to uint256 (little-endian interpretation) 
+    // Convert target to uint256 (little-endian interpretation) - same as SetCompact
     ulong target_parts[4] = {0};
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 8; ++j) {
@@ -503,7 +503,7 @@ __kernel void randomq_kernel(
         }
     }
     
-    // Compare as 256-bit integers (little-endian)
+    // Compare as 256-bit integers (little-endian) - same as arith_uint256 <= comparison
     bool meets_target = true;
     for (int i = 3; i >= 0; --i) {
         if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
@@ -751,7 +751,7 @@ static void MinerLoop()
                         tbytes_be[i] = (unsigned char)byte;
                     }
                 }
-				// Use arith_uint256 comparison (like node uses)
+				// Use arith_uint256 comparison (exactly like node verification)
 				uint256 powhash_uint256;
 				std::memcpy(powhash_uint256.begin(), c_final, 32);
 				arith_uint256 powhash_arith = UintToArith256(powhash_uint256);
