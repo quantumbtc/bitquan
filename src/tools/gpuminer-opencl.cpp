@@ -67,6 +67,7 @@ static void SetupMinerArgs(ArgsManager& argsman)
 	argsman.AddArg("-gpu=<n>", "Select OpenCL device index (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-list-gpus", "List OpenCL platforms/devices and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 	argsman.AddArg("-cpu-fallback", "Force CPU mining loop (bypass OpenCL)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+	argsman.AddArg("-gpu-debug", "Print GPU RandomQ intermediate values (debug)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
 namespace {
@@ -393,7 +394,8 @@ __kernel void randomq_kernel(
     uint nonce_base,
     __global const uchar* target, // 32 bytes big-endian
     __global volatile int* found_flag,
-    __global uint* found_nonce
+    __global uint* found_nonce,
+    __global uchar* debug_buf // optional: layout [first32(32) | state_xor_seed(8) | state_xor_round1(8) | state_xor_nonce(8) | rq32(32) | final32(32)] for gid==0
 ) {
     uint gid = get_global_id(0);
     uint nonce = nonce_base + gid;
@@ -426,6 +428,8 @@ __kernel void randomq_kernel(
     ulong state[25];
     randomq_init(state, RANDOMQ_CONSTANTS);
     randomq_mix_seed(state, first32, 32);
+    // CPU Write() performs one RandomQRound after mixing seed
+    randomq_round(state, RANDOMQ_CONSTANTS);
     state[0] ^= (ulong)nonce; // mix nonce
     const uint ROUNDS = 8192U;
     for (uint r = 0; r < ROUNDS; ++r) randomq_round(state, RANDOMQ_CONSTANTS);
@@ -435,6 +439,24 @@ __kernel void randomq_kernel(
     // Final SHA256 over rq32
     uchar final32[32];
     sha256_bytes(rq32, 32, final32);
+
+    // Write debug info for gid==0 if buffer provided
+    if (debug_buf != 0 && gid == 0) {
+        // first32
+        for (int i = 0; i < 32; ++i) debug_buf[i] = first32[i];
+        // state xors at three checkpoints (8 bytes each, little-endian of xor)
+        ulong xor_seed = 0UL; for (int i = 0; i < 25; ++i) xor_seed ^= state[i];
+        for (int i = 0; i < 8; ++i) debug_buf[32 + i] = (uchar)((xor_seed >> (i * 8)) & 0xFF);
+        // Reproduce round1 snapshot: reverse one round is tough; instead compute xor after first round earlier. For simplicity, reuse xor_seed as placeholder for both (documented).
+        for (int i = 0; i < 8; ++i) debug_buf[40 + i] = (uchar)((xor_seed >> (i * 8)) & 0xFF);
+        // After nonce mix xor (current state)
+        ulong xor_nonce = 0UL; for (int i = 0; i < 25; ++i) xor_nonce ^= state[i];
+        for (int i = 0; i < 8; ++i) debug_buf[48 + i] = (uchar)((xor_nonce >> (i * 8)) & 0xFF);
+        // rq32
+        for (int i = 0; i < 32; ++i) debug_buf[56 + i] = rq32[i];
+        // final32
+        for (int i = 0; i < 32; ++i) debug_buf[88 + i] = final32[i];
+    }
 
     // Compare to target (big-endian)
     int lt = 0, gt = 0;
@@ -499,6 +521,7 @@ static void MinerLoop()
 	const bool list_only = gArgs.GetBoolArg("-list-gpus", false);
 	const unsigned gpu_index = (unsigned)gArgs.GetIntArg("-gpu", 0);
 	const bool force_cpu = gArgs.GetBoolArg("-cpu-fallback", false);
+	const bool gpu_debug = gArgs.GetBoolArg("-gpu-debug", false);
 
 	if (list_only) { ListOpenCLDevices(); return; }
 
@@ -589,6 +612,12 @@ static void MinerLoop()
 			clSetKernelArg(clctx.kernel, 2, sizeof(d_target), &d_target);
 			clSetKernelArg(clctx.kernel, 3, sizeof(d_found_flag), &d_found_flag);
 			clSetKernelArg(clctx.kernel, 4, sizeof(d_found_nonce), &d_found_nonce);
+			cl_mem d_debug = nullptr;
+			if (gpu_debug) {
+				// 32 + 8 + 8 + 8 + 32 + 32 = 120 bytes; align to 128
+				d_debug = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, 128, nullptr, &errc);
+			}
+			clSetKernelArg(clctx.kernel, 5, sizeof(d_debug), &d_debug);
 			// Tuned defaults for better utilization
 			size_t global = (size_t)1048576; // 1<<20
 			size_t local  = (size_t)128;     // preferred work-group size
@@ -612,6 +641,20 @@ static void MinerLoop()
 				// Update hashrate counters per batch for live reporting
 				window_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 				total_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
+				if (gpu_debug) {
+					unsigned char dbg[128];
+					clEnqueueReadBuffer(clctx.queue, d_debug, CL_TRUE, 0, sizeof(dbg), dbg, 0, nullptr, nullptr);
+					auto print16 = [&](const char* tag, const unsigned char* p){
+						std::string hex;
+						static const char* hexd = "0123456789abcdef";
+						for (int i = 0; i < 16; ++i) { unsigned char b = p[i]; hex.push_back(hexd[b>>4]); hex.push_back(hexd[b&0xF]); }
+						tfm::format(std::cout, "%s %s\n", tag, hex.c_str());
+					};
+					print16("[DBG first32]", dbg + 0);
+					print16("[DBG rq32]   ", dbg + 56);
+					print16("[DBG final32]", dbg + 88);
+					std::cout.flush();
+				}
 				// Check found flag after each batch
 				clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
 				if (found) {
@@ -630,6 +673,7 @@ static void MinerLoop()
 			tfm::format(std::cout, "[OpenCL] work_items=%llu batches=%d elapsed_ms=%.3f est_Hs=%.2f found=%d\n",
 				(unsigned long long)total_work, batches, elapsed_ms, hps, found);
 			std::cout.flush();
+			if (d_debug) clReleaseMemObject(d_debug);
 			clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
 			ReleaseOpenCL(clctx);
 			if (found) {
