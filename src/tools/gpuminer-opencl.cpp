@@ -735,14 +735,18 @@ static void MinerLoop()
                         tbytes_be[i] = (unsigned char)byte;
                     }
                 }
-                // Big-endian lexicographic comparison
-                bool meets = false;
-                for (int i = 0; i < 32; ++i) {
-                    unsigned char h = c_final[i];
-                    unsigned char t = tbytes_be[i];
-                    if (h < t) { meets = true; break; }
-                    if (h > t) { meets = false; break; }
-                }
+				// Big-endian lexicographic comparison
+				bool meets = false;
+				tfm::format(std::cout, "[TargetCompare] target=%s\n", HexStr(std::span<const unsigned char>(tbytes_be, 32)).c_str());
+				tfm::format(std::cout, "[TargetCompare] powhash=%s\n", HexStr(std::span<const unsigned char>(c_final, 32)).c_str());
+				for (int i = 0; i < 32; ++i) {
+					unsigned char h = c_final[i];
+					unsigned char t = tbytes_be[i];
+					tfm::format(std::cout, "[TargetCompare] byte[%d]: %02x vs %02x\n", i, h, t);
+					if (h < t) { meets = true; break; }
+					if (h > t) { meets = false; break; }
+				}
+				tfm::format(std::cout, "[TargetCompare] meets=%s\n", meets ? "true" : "false");
 				// Print found header info
 				{
 					tfm::format(std::cout,
