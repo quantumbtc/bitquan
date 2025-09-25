@@ -507,7 +507,7 @@ static void MinerLoop()
 
 	try {
 	while (!g_stop.load()) {
-		UniValue rules(UniValue::VARR); rules.push_back("segwit");
+		UniValue rules(UniValue::VARR);
 		UniValue caps(UniValue::VARR); caps.push_back("coinbasetxn");
 		UniValue req(UniValue::VOBJ); req.pushKV("rules", rules); req.pushKV("capabilities", caps);
 		UniValue params_arr(UniValue::VARR); params_arr.push_back(req);
