@@ -685,12 +685,41 @@ static void MinerLoop()
 			tfm::format(std::cout, "[OpenCL] work_items=%llu batches=%d elapsed_ms=%.3f est_Hs=%.2f found=%d\n",
 				(unsigned long long)total_work, batches, elapsed_ms, hps, found);
 			std::cout.flush();
-			if (found) {
-				block.nNonce = found_nonce;
-				// CPU verification of PoW before submit
-				const uint256 powhash = RandomQMining::CalculateRandomQHashOptimized(block, block.nNonce);
-				arith_uint256 target; bool neg=false, of=false; target.SetCompact(block.nBits, &neg, &of);
-				bool meets = (!neg && !of && target != 0 && UintToArith256(powhash) <= target);
+            if (found) {
+                block.nNonce = found_nonce;
+                // CPU verification of PoW before submit (match kernel's big-endian byte-wise comparison)
+                // Recompute final32 on CPU for the found nonce
+                unsigned char c_first[32];
+                unsigned char c_rq[32];
+                unsigned char c_final[32];
+                {
+                    std::vector<unsigned char> hb; VectorWriter(hb, 0, static_cast<const CBlockHeader&>(block));
+                    CSHA256 sh1; sh1.Write(hb.data(), hb.size()); sh1.Finalize(c_first);
+                    CRandomQ rq; rq.Reset(); rq.Write(std::span<const unsigned char>(c_first, 32)); rq.SetNonce(block.nNonce); rq.SetRounds(8192); rq.Finalize(c_rq);
+                    CSHA256 sh2; sh2.Write(c_rq, 32); sh2.Finalize(c_final);
+                }
+                // Build target bytes (big-endian) same as for device buffer
+                unsigned char tbytes_be[32];
+                {
+                    arith_uint256 atarget; bool neg=false2, of2=false; atarget.SetCompact(block.nBits, &neg, &of2);
+                    std::string thex = atarget.GetHex();
+                    if (thex.size() < 64) thex = std::string(64 - thex.size(), '0') + thex;
+                    for (int i = 0; i < 32; ++i) {
+                        unsigned int byte = 0;
+                        char hi = thex[i*2]; char lo = thex[i*2+1];
+                        auto val = [&](char c){ if (c>='0'&&c<='9') return (unsigned)(c-'0'); if (c>='a'&&c<='f') return (unsigned)(c-'a'+10); if (c>='A'&&c<='F') return (unsigned)(c-'A'+10); return 0U; };
+                        byte = (val(hi) << 4) | val(lo);
+                        tbytes_be[i] = (unsigned char)byte;
+                    }
+                }
+                // Big-endian lexicographic comparison
+                bool meets = false;
+                for (int i = 0; i < 32; ++i) {
+                    unsigned char h = c_final[i];
+                    unsigned char t = tbytes_be[i];
+                    if (h < t) { meets = true; break; }
+                    if (h > t) { meets = false; break; }
+                }
 				// Print found header info
 				{
 					tfm::format(std::cout,
@@ -698,8 +727,8 @@ static void MinerLoop()
 						(unsigned)block.nNonce,
 						(unsigned)block.nTime,
 						(unsigned)block.nBits,
-						target.GetHex().c_str(),
-						powhash.GetHex().c_str(),
+                        arith_uint256().SetCompact(block.nBits).GetHex().c_str(),
+                        HexStr(std::span<const unsigned char>(c_final, 32)).c_str(),
 						block.hashMerkleRoot.GetHex().c_str());
 					std::cout.flush();
 				}
