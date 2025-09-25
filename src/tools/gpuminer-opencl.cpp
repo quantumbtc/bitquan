@@ -424,6 +424,7 @@ __kernel void randomq_kernel(
     uint nonce = nonce_base + gid;
 
     // First SHA256 over 80-byte header with nonce at 76..79 (LE)
+    // This matches CPU: VectorWriter(serialized, 0, headerCopy) -> sha256_first.Write()
     uchar chunk0[64];
     for (int i = 0; i < 64; ++i) chunk0[i] = header80[i];
     uchar chunk1[64];
@@ -450,11 +451,19 @@ __kernel void randomq_kernel(
     // RandomQ: match CPU implementation exactly
     // CPU: Reset() -> Write(first32) -> Finalize() (with nonce and rounds set)
     ulong state[25];
-    // Reset() - start with zero state
+    // Reset() - start with zero state (like CPU Reset())
     for (int i = 0; i < 25; ++i) state[i] = 0UL;
     
     // Write(first32) - mix input data and run one round (like CPU Write method)
-    randomq_mix_seed(state, first32, 32); // Mix first32 as input data
+    // CPU Write() processes input in 64-byte chunks, but first32 is only 32 bytes
+    // So it processes 32 bytes, mixes into state[0-3], then runs one round
+    for (int i = 0; i < 4; ++i) { // 32 bytes = 4 * 8 bytes
+        ulong chunk = 0UL;
+        for (int j = 0; j < 8; ++j) {
+            chunk |= (ulong)first32[i*8 + j] << (j * 8);
+        }
+        state[i] ^= chunk;
+    }
     randomq_round(state, RANDOMQ_CONSTANTS); // One round after input processing (like CPU)
     
     // Finalize() - mix nonce and run 8192 rounds
