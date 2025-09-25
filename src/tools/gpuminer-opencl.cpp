@@ -250,9 +250,28 @@ static bool BuildBlockFromGBT(const UniValue& gbt_res, CBlock& block, std::strin
 static std::string UpdateNonceInBlockHex(const std::string& tmpl_hex, uint32_t nonce)
 {
 	if (tmpl_hex.size() < 160) throw std::runtime_error("template hex too short");
-	std::string out = tmpl_hex; const size_t off = 76 * 2; unsigned char b0 = (unsigned char)(nonce & 0xFF); unsigned char b1 = (unsigned char)((nonce >> 8) & 0xFF); unsigned char b2 = (unsigned char)((nonce >> 16) & 0xFF); unsigned char b3 = (unsigned char)((nonce >> 24) & 0xFF);
-	auto write_byte = [&](size_t pos, unsigned char b){ static const char* hexd = "0123456789abcdef"; out[pos+0] = hexd[(b >> 4) & 0xF]; out[pos+1] = hexd[b & 0xF]; };
-	write_byte(off + 0, b0); write_byte(off + 2, b1); write_byte(off + 4, b2); write_byte(off + 6, b3); return out;
+	std::string out = tmpl_hex; const size_t off = 76 * 2; 
+	unsigned char b0 = (unsigned char)(nonce & 0xFF); 
+	unsigned char b1 = (unsigned char)((nonce >> 8) & 0xFF); 
+	unsigned char b2 = (unsigned char)((nonce >> 16) & 0xFF); 
+	unsigned char b3 = (unsigned char)((nonce >> 24) & 0xFF);
+	
+	// Debug: print nonce bytes
+	tfm::format(std::cout, "[NonceDebug] nonce=%u -> bytes: %02x %02x %02x %02x\n", 
+		(unsigned)nonce, b0, b1, b2, b3);
+	
+	auto write_byte = [&](size_t pos, unsigned char b){ 
+		static const char* hexd = "0123456789abcdef"; 
+		out[pos+0] = hexd[(b >> 4) & 0xF]; 
+		out[pos+1] = hexd[b & 0xF]; 
+	};
+	write_byte(off + 0, b0); write_byte(off + 2, b1); write_byte(off + 4, b2); write_byte(off + 6, b3); 
+	
+	// Debug: print nonce section before and after
+	tfm::format(std::cout, "[NonceDebug] before: %s\n", tmpl_hex.substr(off, 8).c_str());
+	tfm::format(std::cout, "[NonceDebug] after:  %s\n", out.substr(off, 8).c_str());
+	
+	return out;
 }
 
 static std::string BuildFullBlockHex(const CBlock& block)
