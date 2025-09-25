@@ -486,15 +486,31 @@ __kernel void randomq_kernel(
         for (int i = 0; i < 32; ++i) debug_buf[88 + i] = final32[i];
     }
 
-    // Compare to target (big-endian)
-    int lt = 0, gt = 0;
-    for (int i = 0; i < 32; ++i) {
-        uchar h = final32[i];
-        uchar t = target[i];
-        if (h < t) { lt = 1; break; }
-        if (h > t) { gt = 1; break; }
+    // Compare using arith_uint256 logic (like CPU verification)
+    // Convert final32 to uint256 (little-endian interpretation)
+    ulong hash_parts[4] = {0};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            hash_parts[i] |= ((ulong)final32[i*8 + j]) << (j * 8);
+        }
     }
-    if (lt && atom_cmpxchg(found_flag, 0, 1) == 0) {
+    
+    // Convert target to uint256 (little-endian interpretation) 
+    ulong target_parts[4] = {0};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            target_parts[i] |= ((ulong)target[i*8 + j]) << (j * 8);
+        }
+    }
+    
+    // Compare as 256-bit integers (little-endian)
+    bool meets_target = true;
+    for (int i = 3; i >= 0; --i) {
+        if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
+        if (hash_parts[i] > target_parts[i]) { meets_target = false; break; }
+    }
+    
+    if (meets_target && atom_cmpxchg(found_flag, 0, 1) == 0) {
         *found_nonce = nonce;
     }
 }
