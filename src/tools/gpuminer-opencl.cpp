@@ -774,8 +774,6 @@ static void MinerLoop()
 			tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
 			std::cout.flush();
 		}
-		if (d_debug) clReleaseMemObject(d_debug);
-		cleanup();
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
 
