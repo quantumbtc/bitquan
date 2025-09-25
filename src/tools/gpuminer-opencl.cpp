@@ -607,6 +607,14 @@ static void MinerLoop()
 			cl_mem d_found_flag = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_int), nullptr, &errc);
 			cl_mem d_found_nonce = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_uint), nullptr, &errc);
 			cl_int zero = 0; clEnqueueWriteBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(zero), &zero, 0, nullptr, nullptr);
+			auto cleanup = [&]() {
+				if (d_debug) clReleaseMemObject(d_debug);
+				clReleaseMemObject(d_header);
+				clReleaseMemObject(d_target);
+				clReleaseMemObject(d_found_flag);
+				clReleaseMemObject(d_found_nonce);
+				ReleaseOpenCL(clctx);
+			};
 			clSetKernelArg(clctx.kernel, 0, sizeof(d_header), &d_header);
 			clSetKernelArg(clctx.kernel, 1, sizeof(nonce_base), &nonce_base);
 			clSetKernelArg(clctx.kernel, 2, sizeof(d_target), &d_target);
@@ -727,17 +735,12 @@ static void MinerLoop()
 				if (!meets) {
 					tfm::format(std::cout, "[Skip] high-hash (CPU verify failed), continue...\n");
 					std::cout.flush();
-					// clean up resources before continue
-					if (d_debug) clReleaseMemObject(d_debug);
-					clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
-					ReleaseOpenCL(clctx);
+					cleanup();
 					continue;
 				}
 			} else {
 				// Skip submit for this template; continue to fetch next
-				if (d_debug) clReleaseMemObject(d_debug);
-				clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
-				ReleaseOpenCL(clctx);
+				cleanup();
 				continue;
 			}
 		} else
@@ -770,10 +773,7 @@ static void MinerLoop()
 			tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
 			std::cout.flush();
 		}
-		// release OpenCL resources after submission
-		if (d_debug) clReleaseMemObject(d_debug);
-		clReleaseMemObject(d_header); clReleaseMemObject(d_target); clReleaseMemObject(d_found_flag); clReleaseMemObject(d_found_nonce);
-		ReleaseOpenCL(clctx);
+		cleanup();
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
 
