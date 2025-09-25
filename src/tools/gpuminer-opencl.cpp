@@ -608,7 +608,6 @@ static void MinerLoop()
 			cl_mem d_found_nonce = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_uint), nullptr, &errc);
 			cl_int zero = 0; clEnqueueWriteBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(zero), &zero, 0, nullptr, nullptr);
 			auto cleanup = [&]() {
-				if (d_debug) clReleaseMemObject(d_debug);
 				clReleaseMemObject(d_header);
 				clReleaseMemObject(d_target);
 				clReleaseMemObject(d_found_flag);
@@ -735,11 +734,13 @@ static void MinerLoop()
 				if (!meets) {
 					tfm::format(std::cout, "[Skip] high-hash (CPU verify failed), continue...\n");
 					std::cout.flush();
+					if (d_debug) clReleaseMemObject(d_debug);
 					cleanup();
 					continue;
 				}
 			} else {
 				// Skip submit for this template; continue to fetch next
+				if (d_debug) clReleaseMemObject(d_debug);
 				cleanup();
 				continue;
 			}
@@ -773,6 +774,7 @@ static void MinerLoop()
 			tfm::format(std::cout, "[SubmitRaw] %s\n", sub.write().c_str());
 			std::cout.flush();
 		}
+		if (d_debug) clReleaseMemObject(d_debug);
 		cleanup();
 	}
 	} catch (const std::exception& e) { g_stop.store(true); tfm::format(std::cerr, "gpuminer-opencl error: %s\n", e.what()); }
