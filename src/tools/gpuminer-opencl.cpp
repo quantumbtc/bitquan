@@ -493,6 +493,14 @@ __kernel void randomq_kernel(
         for (int i = 0; i < 32; ++i) debug_buf[56 + i] = rq32[i];
         // final32
         for (int i = 0; i < 32; ++i) debug_buf[88 + i] = final32[i];
+        
+        // Additional debug: store target and comparison result
+        for (int i = 0; i < 32; ++i) debug_buf[120 + i] = target[i];
+        debug_buf[152] = meets_target ? 1 : 0; // comparison result
+        debug_buf[153] = (uchar)(nonce & 0xFF);
+        debug_buf[154] = (uchar)((nonce >> 8) & 0xFF);
+        debug_buf[155] = (uchar)((nonce >> 16) & 0xFF);
+        debug_buf[156] = (uchar)((nonce >> 24) & 0xFF);
     }
 
     // Compare using arith_uint256 logic (matches node verification exactly)
@@ -686,6 +694,10 @@ static void MinerLoop()
 			uint64_t total_work = 0;
 			int found = 0;
 			uint32_t found_nonce = 0;
+			
+			// Statistics for debugging
+			uint64_t total_hashes_checked = 0;
+			uint64_t hashes_close_to_target = 0;
 			auto t0 = std::chrono::high_resolution_clock::now();
 			for (int bi = 0; bi < batches && !g_stop.load(); ++bi) {
 				// Update nonce_base per batch
@@ -713,6 +725,35 @@ static void MinerLoop()
 					print16("[DBG first32]", dbg + 0);
 					print16("[DBG rq32]   ", dbg + 56);
 					print16("[DBG final32]", dbg + 88);
+					
+					// Print target and comparison info
+					print16("[DBG target] ", dbg + 120);
+					
+					bool meets_target = dbg[152] != 0;
+					uint32_t nonce = dbg[153] | (dbg[154] << 8) | (dbg[155] << 16) | (dbg[156] << 24);
+					tfm::format(std::cout, "[DBG nonce]   %u meets_target=%s\n", nonce, meets_target ? "true" : "false");
+					
+					// Update statistics
+					total_hashes_checked += global;
+					if (meets_target) {
+						hashes_close_to_target++;
+					}
+					
+					// Print full 32-byte values for detailed analysis
+					std::cout << "[DBG full_final32] ";
+					for (int i = 0; i < 32; ++i) {
+						unsigned char b = dbg[88 + i];
+						std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)b;
+					}
+					std::cout << std::dec << std::endl;
+					
+					std::cout << "[DBG full_target] ";
+					for (int i = 0; i < 32; ++i) {
+						unsigned char b = dbg[120 + i];
+						std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)b;
+					}
+					std::cout << std::dec << std::endl;
+					
 					std::cout.flush();
 				}
 				// Check found flag after each batch
@@ -732,6 +773,30 @@ static void MinerLoop()
 			double hps = elapsed_ms > 0.0 ? ((double)total_work * 1000.0) / elapsed_ms : 0.0;
 			tfm::format(std::cout, "[OpenCL] work_items=%llu batches=%d elapsed_ms=%.3f est_Hs=%.2f found=%d\n",
 				(unsigned long long)total_work, batches, elapsed_ms, hps, found);
+			// Extra debug: difficulty/target and expected time at current hashrate
+			if (gpu_debug) {
+				arith_uint256 atarget; bool neg=false, of=false; atarget.SetCompact(block.nBits, &neg, &of);
+				// approximate expected_hashes ≈ 2^256 / target using high limbs
+				arith_uint256 two256_hi = arith_uint256::ONE << 255; // use 2^255 then x2
+				arith_uint256 approx = (two256_hi / (atarget == 0 ? arith_uint256::ONE : atarget)) << 1;
+				uint64_t hi3 = approx.GetUint64(3);
+				uint64_t hi2 = approx.GetUint64(2);
+				double exp_hashes = (double)hi3 + (double)hi2 / (double)(1ULL<<64);
+				double exp_seconds = hps > 0.0 ? (exp_hashes / hps) : 0.0;
+				tfm::format(std::cout, "[Debug] height=%d bits=%08x target=%s expected_hashes≈%.3fe+57 expected_time≈%.2fs (at %.0f H/s)\n",
+					res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>(),
+					(unsigned)block.nBits,
+					atarget.GetHex().c_str(),
+					exp_hashes / 1e57,
+					exp_seconds,
+					hps);
+			}
+			
+			// Print statistics
+			tfm::format(std::cout, "[Stats] total_hashes_checked=%llu hashes_close_to_target=%llu ratio=%.6f%%\n",
+				(unsigned long long)total_hashes_checked, (unsigned long long)hashes_close_to_target,
+				total_hashes_checked > 0 ? (double)hashes_close_to_target * 100.0 / (double)total_hashes_checked : 0.0);
+			
 			std::cout.flush();
             if (found) {
                 block.nNonce = found_nonce;
