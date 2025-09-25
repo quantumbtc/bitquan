@@ -747,6 +747,15 @@ static void MinerLoop()
 					if (h > t) { meets = false; break; }
 				}
 				tfm::format(std::cout, "[TargetCompare] meets=%s\n", meets ? "true" : "false");
+				
+				// Also test with UintToArith256 comparison (like node might use)
+				uint256 powhash_uint256;
+				std::memcpy(powhash_uint256.begin(), c_final, 32);
+				arith_uint256 powhash_arith = UintToArith256(powhash_uint256);
+				arith_uint256 target_arith; bool neg2=false, of2=false; target_arith.SetCompact(block.nBits, &neg2, &of2);
+				bool meets_arith = (!neg2 && !of2 && target_arith != 0 && powhash_arith <= target_arith);
+				tfm::format(std::cout, "[TargetCompare] arith_uint256: powhash=%s target=%s meets=%s\n", 
+					powhash_arith.GetHex().c_str(), target_arith.GetHex().c_str(), meets_arith ? "true" : "false");
 				// Print found header info
 				{
 					tfm::format(std::cout,
