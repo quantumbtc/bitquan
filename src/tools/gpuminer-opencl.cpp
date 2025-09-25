@@ -556,24 +556,20 @@ static void MinerLoop()
 			cl_mem d_header = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(header), header, &errc);
 			uint32_t nonce_base = block.nNonce;
 			cl_mem d_target = clCreateBuffer(clctx.context, CL_MEM_READ_ONLY, 32, nullptr, &errc);
-			// Build target bytes (big-endian) from compact nBits
-			// nBits: 1-byte exponent (E), 3-byte mantissa (M), target = M * 2^(8*(E-3))
+			// Build target bytes (big-endian) using arith_uint256 for exact expansion
 			{
-				uint32_t nBits = block.nBits;
+				arith_uint256 atarget; bool neg=false, of=false; atarget.SetCompact(block.nBits, &neg, &of);
+				std::string thex = atarget.GetHex();
+				if (thex.size() < 64) thex = std::string(64 - thex.size(), '0') + thex;
 				unsigned char tbytes[32];
-				for (int i = 0; i < 32; ++i) tbytes[i] = 0;
-				uint32_t m = nBits & 0x007FFFFF; // mantissa (assuming sign bit not used)
-				uint32_t e = (nBits >> 24) & 0xFF; // exponent
-				// Place mantissa into big-endian array at position (e-3)
-				int pos = (int)e - 3;
-				if (pos < 0) pos = 0;
-				if (pos > 29) pos = 29;
-				if (pos + 3 <= 32) {
-					tbytes[pos + 0] = (unsigned char)((m >> 16) & 0xFF);
-					tbytes[pos + 1] = (unsigned char)((m >> 8) & 0xFF);
-					tbytes[pos + 2] = (unsigned char)(m & 0xFF);
+				for (int i = 0; i < 32; ++i) {
+					unsigned int byte = 0;
+					char hi = thex[i*2];
+					char lo = thex[i*2+1];
+					byte = (unsigned int)(std::stoi(std::string(1, hi), nullptr, 16) << 4) |
+					       (unsigned int)std::stoi(std::string(1, lo), nullptr, 16);
+					tbytes[i] = (unsigned char)byte;
 				}
-				// Upload
 				clEnqueueWriteBuffer(clctx.queue, d_target, CL_TRUE, 0, 32, tbytes, 0, nullptr, nullptr);
 			}
 			cl_mem d_found_flag = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, sizeof(cl_int), nullptr, &errc);
@@ -604,6 +600,9 @@ static void MinerLoop()
 				}
 				clFinish(clctx.queue);
 				total_work += (uint64_t)global;
+				// Update hashrate counters per batch for live reporting
+				window_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
+				total_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 				// Check found flag after each batch
 				clEnqueueReadBuffer(clctx.queue, d_found_flag, CL_TRUE, 0, sizeof(found), &found, 0, nullptr, nullptr);
 				if (found) {
