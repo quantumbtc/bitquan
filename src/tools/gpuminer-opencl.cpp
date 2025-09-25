@@ -735,27 +735,14 @@ static void MinerLoop()
                         tbytes_be[i] = (unsigned char)byte;
                     }
                 }
-				// Big-endian lexicographic comparison
-				bool meets = false;
-				tfm::format(std::cout, "[TargetCompare] target=%s\n", HexStr(std::span<const unsigned char>(tbytes_be, 32)).c_str());
-				tfm::format(std::cout, "[TargetCompare] powhash=%s\n", HexStr(std::span<const unsigned char>(c_final, 32)).c_str());
-				for (int i = 0; i < 32; ++i) {
-					unsigned char h = c_final[i];
-					unsigned char t = tbytes_be[i];
-					tfm::format(std::cout, "[TargetCompare] byte[%d]: %02x vs %02x\n", i, h, t);
-					if (h < t) { meets = true; break; }
-					if (h > t) { meets = false; break; }
-				}
-				tfm::format(std::cout, "[TargetCompare] meets=%s\n", meets ? "true" : "false");
-				
-				// Also test with UintToArith256 comparison (like node might use)
+				// Use arith_uint256 comparison (like node uses)
 				uint256 powhash_uint256;
 				std::memcpy(powhash_uint256.begin(), c_final, 32);
 				arith_uint256 powhash_arith = UintToArith256(powhash_uint256);
 				arith_uint256 target_arith; bool neg2=false, of2=false; target_arith.SetCompact(block.nBits, &neg2, &of2);
-				bool meets_arith = (!neg2 && !of2 && target_arith != 0 && powhash_arith <= target_arith);
+				bool meets = (!neg2 && !of2 && target_arith != 0 && powhash_arith <= target_arith);
 				tfm::format(std::cout, "[TargetCompare] arith_uint256: powhash=%s target=%s meets=%s\n", 
-					powhash_arith.GetHex().c_str(), target_arith.GetHex().c_str(), meets_arith ? "true" : "false");
+					powhash_arith.GetHex().c_str(), target_arith.GetHex().c_str(), meets ? "true" : "false");
 				// Print found header info
 				{
 					tfm::format(std::cout,
