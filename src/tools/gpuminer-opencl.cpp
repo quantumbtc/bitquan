@@ -276,7 +276,11 @@ static std::string UpdateNonceInBlockHex(const std::string& tmpl_hex, uint32_t n
 
 static std::string BuildFullBlockHex(const CBlock& block)
 {
-	std::vector<unsigned char> bytes; VectorWriter vw(bytes, 0, static_cast<const CBlockHeader&>(block)); WriteCompactSize(vw, block.vtx.size()); for (const auto& txref : block.vtx) { const std::string tx_hex = EncodeHexTx(*txref); std::vector<unsigned char> tx_bytes = ParseHex(tx_hex); vw.write(std::as_bytes(std::span<const unsigned char>(tx_bytes.data(), tx_bytes.size()))); } return HexStr(bytes);
+	tfm::format(std::cout, "[BuildFullBlockHex] nonce=%u\n", (unsigned)block.nNonce);
+	std::vector<unsigned char> bytes; VectorWriter vw(bytes, 0, static_cast<const CBlockHeader&>(block)); WriteCompactSize(vw, block.vtx.size()); for (const auto& txref : block.vtx) { const std::string tx_hex = EncodeHexTx(*txref); std::vector<unsigned char> tx_bytes = ParseHex(tx_hex); vw.write(std::as_bytes(std::span<const unsigned char>(tx_bytes.data(), tx_bytes.size()))); } 
+	std::string result = HexStr(bytes);
+	tfm::format(std::cout, "[BuildFullBlockHex] result_len=%zu nonce_section=%s\n", result.size(), result.substr(152, 8).c_str());
+	return result;
 }
 
 #ifdef OPENCL_FOUND
@@ -812,7 +816,13 @@ static void MinerLoop()
 			}
 		}
 
-		std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
+		std::string sub_hex; 
+		if (!tmpl_hex.empty()) {
+			sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce);
+		} else {
+			tfm::format(std::cout, "[NonceDebug] Using BuildFullBlockHex for nonce=%u\n", (unsigned)block.nNonce);
+			sub_hex = BuildFullBlockHex(block);
+		}
 		
 		// Print submit data for debugging
 		tfm::format(std::cout, "[SubmitData] nonce=%u hex_len=%zu\n", (unsigned)block.nNonce, sub_hex.size());
