@@ -794,6 +794,12 @@ static void MinerLoop()
 		}
 
 		std::string sub_hex; if (!tmpl_hex.empty()) sub_hex = UpdateNonceInBlockHex(tmpl_hex, block.nNonce); else sub_hex = BuildFullBlockHex(block);
+		
+		// Print submit data for debugging
+		tfm::format(std::cout, "[SubmitData] nonce=%u hex_len=%zu\n", (unsigned)block.nNonce, sub_hex.size());
+		tfm::format(std::cout, "[SubmitHex] %s\n", sub_hex.c_str());
+		std::cout.flush();
+		
 		UniValue sub = RpcCall("submitblock", {sub_hex});
 		// Print raw submit result (robust)
 		{
