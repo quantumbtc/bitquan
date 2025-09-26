@@ -682,8 +682,8 @@ static void MinerLoop()
 			clSetKernelArg(clctx.kernel, 4, sizeof(d_found_nonce), &d_found_nonce);
 			cl_mem d_debug = nullptr;
 			if (gpu_debug) {
-				// 32 + 8 + 8 + 8 + 32 + 32 = 120 bytes; align to 128
-				d_debug = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, 128, nullptr, &errc);
+				// 32 + 8 + 8 + 8 + 32 + 32 + 32 + 1 + 4 = 157 bytes; align to 160
+				d_debug = clCreateBuffer(clctx.context, CL_MEM_READ_WRITE, 160, nullptr, &errc);
 			}
 			clSetKernelArg(clctx.kernel, 5, sizeof(d_debug), &d_debug);
 			// Tuned defaults for better utilization
@@ -714,7 +714,7 @@ static void MinerLoop()
 				window_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 				total_hashes.fetch_add((uint64_t)global, std::memory_order_relaxed);
 				if (gpu_debug) {
-					unsigned char dbg[128];
+					unsigned char dbg[160];
 					clEnqueueReadBuffer(clctx.queue, d_debug, CL_TRUE, 0, sizeof(dbg), dbg, 0, nullptr, nullptr);
 					auto print16 = [&](const char* tag, const unsigned char* p){
 						std::string hex;
@@ -812,20 +812,7 @@ static void MinerLoop()
                     CRandomQ rq; rq.Reset(); rq.Write(std::span<const unsigned char>(c_first, 32)); rq.SetNonce(block.nNonce); rq.SetRounds(8192); rq.Finalize(c_rq);
                     CSHA256 sh2; sh2.Write(c_rq, 32); sh2.Finalize(c_final);
                 }
-                // Build target bytes (big-endian) same as for device buffer
-                unsigned char tbytes_be[32];
-                {
-                    arith_uint256 atarget; bool neg=false, of2=false; atarget.SetCompact(block.nBits, &neg, &of2);
-                    std::string thex = atarget.GetHex();
-                    if (thex.size() < 64) thex = std::string(64 - thex.size(), '0') + thex;
-                    for (int i = 0; i < 32; ++i) {
-                        unsigned int byte = 0;
-                        char hi = thex[i*2]; char lo = thex[i*2+1];
-                        auto val = [&](char c){ if (c>='0'&&c<='9') return (unsigned)(c-'0'); if (c>='a'&&c<='f') return (unsigned)(c-'a'+10); if (c>='A'&&c<='F') return (unsigned)(c-'A'+10); return 0U; };
-                        byte = (val(hi) << 4) | val(lo);
-                        tbytes_be[i] = (unsigned char)byte;
-                    }
-                }
+                // Note: Target bytes are handled in the OpenCL kernel directly
 				// Use arith_uint256 comparison (exactly like node verification)
 				uint256 powhash_uint256;
 				std::memcpy(powhash_uint256.begin(), c_final, 32);
@@ -853,7 +840,7 @@ static void MinerLoop()
 					size_t g1 = 1, l1 = 1;
 					clEnqueueNDRangeKernel(clctx.queue, clctx.kernel, 1, nullptr, &g1, &l1, 0, nullptr, nullptr);
 					clFinish(clctx.queue);
-					unsigned char dbg2[128];
+					unsigned char dbg2[160];
 					if (d_debug) {
 						clEnqueueReadBuffer(clctx.queue, d_debug, CL_TRUE, 0, sizeof(dbg2), dbg2, 0, nullptr, nullptr);
 						auto hex16 = [&](const unsigned char* p){ std::string s; static const char* h="0123456789abcdef"; for(int i=0;i<16;++i){ unsigned char b=p[i]; s.push_back(h[b>>4]); s.push_back(h[b&0xF]); } return s; };
