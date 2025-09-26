@@ -777,33 +777,35 @@ static void MinerLoop()
 			// Extra debug: difficulty/target and expected time at current hashrate
 			if (gpu_debug) {
 				arith_uint256 atarget; bool neg=false, of=false; atarget.SetCompact(block.nBits, &neg, &of);
-				// approximate expected_hashes ≈ 2^256 / target
-				// For typical targets, this is a very large number, so we'll use a simpler approximation
-				// based on the target difficulty: expected_hashes ≈ 2^256 / target
-				// Since 2^256 is approximately 1.16e77, and typical targets are much smaller,
-				// we can use the target's bit length to estimate
-				double exp_hashes;
-				if (atarget == 0) {
-					exp_hashes = 1.16e77; // 2^256
-				} else {
-					// Use the fact that difficulty ≈ 2^256 / target
-					// For a rough estimate, we can use the target's leading zeros
-					std::string target_hex = atarget.GetHex();
-					int leading_zeros = 0;
-					for (char c : target_hex) {
-						if (c == '0') leading_zeros++;
-						else break;
+				// Calculate expected hashes using proper arith_uint256 arithmetic
+				// expected_hashes = 2^256 / target
+				arith_uint256 two256 = arith_uint256(1) << 256;
+				arith_uint256 exp_hashes_arith = two256 / (atarget == 0 ? arith_uint256(1) : atarget);
+				
+				// Convert to double for time calculation (may lose precision for very large numbers)
+				double exp_hashes_double = 0.0;
+				if (exp_hashes_arith.GetLow64() > 0) {
+					exp_hashes_double = (double)exp_hashes_arith.GetLow64();
+					// Add higher order bits if they exist (approximation)
+					for (int i = 1; i < 4; ++i) {
+						uint64_t higher_bits = ArithToUint256(exp_hashes_arith).GetUint64(i);
+						if (higher_bits > 0) {
+							exp_hashes_double += (double)higher_bits * (1ULL << (i * 64));
+						}
 					}
-					// Each leading zero represents 4 bits, so 2^(4*leading_zeros) factor
-					exp_hashes = 1.16e77 / (1ULL << (4 * leading_zeros));
 				}
-				double exp_seconds = hps > 0.0 ? (exp_hashes / hps) : 0.0;
-				tfm::format(std::cout, "[Debug] height=%d bits=%08x target=%s expected_hashes≈%.3fe+57 expected_time≈%.2fs (at %.0f H/s)\n",
+				
+				double exp_seconds = hps > 0.0 ? (exp_hashes_double / hps) : 0.0;
+				double exp_minutes = exp_seconds / 60.0;
+				double exp_hours = exp_minutes / 60.0;
+				
+				tfm::format(std::cout, "[Debug] height=%d bits=%08x target=%s expected_hashes≈%.2e expected_time≈%.2f minutes (%.2f hours) at %.0f H/s\n",
 					res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>(),
 					(unsigned)block.nBits,
 					atarget.GetHex().c_str(),
-					exp_hashes / 1e57,
-					exp_seconds,
+					exp_hashes_double,
+					exp_minutes,
+					exp_hours,
 					hps);
 			}
 			
