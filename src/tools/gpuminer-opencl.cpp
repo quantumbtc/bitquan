@@ -495,10 +495,11 @@ __kernel void randomq_kernel(
     }
     
     // Compare as 256-bit integers (little-endian) - same as arith_uint256 <= comparison
-    bool meets_target = true;
+    bool meets_target = false;  // Default: hash does not meet target
     for (int i = 3; i >= 0; --i) {
-        if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
         if (hash_parts[i] > target_parts[i]) { meets_target = false; break; }
+        if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
+        // If equal, continue to next part
     }
 
     // Write debug info for gid==0 if buffer provided
