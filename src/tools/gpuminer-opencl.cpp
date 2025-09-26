@@ -776,13 +776,26 @@ static void MinerLoop()
 			// Extra debug: difficulty/target and expected time at current hashrate
 			if (gpu_debug) {
 				arith_uint256 atarget; bool neg=false, of=false; atarget.SetCompact(block.nBits, &neg, &of);
-				// approximate expected_hashes ≈ 2^256 / target using high limbs
-				arith_uint256 two256_hi = arith_uint256(1) << 255; // use 2^255 then x2
-				arith_uint256 approx = (two256_hi / (atarget == 0 ? arith_uint256(1) : atarget)) << 1;
-				uint256 approx_uint = ArithToUint256(approx);
-				uint64_t hi3 = approx_uint.GetUint64(3);
-				uint64_t hi2 = approx_uint.GetUint64(2);
-				double exp_hashes = (double)hi3 + (double)hi2 / (double)(1ULL << 63); // Use 63 instead of 64 to avoid overflow warning
+				// approximate expected_hashes ≈ 2^256 / target
+				// For typical targets, this is a very large number, so we'll use a simpler approximation
+				// based on the target difficulty: expected_hashes ≈ 2^256 / target
+				// Since 2^256 is approximately 1.16e77, and typical targets are much smaller,
+				// we can use the target's bit length to estimate
+				double exp_hashes;
+				if (atarget == 0) {
+					exp_hashes = 1.16e77; // 2^256
+				} else {
+					// Use the fact that difficulty ≈ 2^256 / target
+					// For a rough estimate, we can use the target's leading zeros
+					std::string target_hex = atarget.GetHex();
+					int leading_zeros = 0;
+					for (char c : target_hex) {
+						if (c == '0') leading_zeros++;
+						else break;
+					}
+					// Each leading zero represents 4 bits, so 2^(4*leading_zeros) factor
+					exp_hashes = 1.16e77 / (1ULL << (4 * leading_zeros));
+				}
 				double exp_seconds = hps > 0.0 ? (exp_hashes / hps) : 0.0;
 				tfm::format(std::cout, "[Debug] height=%d bits=%08x target=%s expected_hashes≈%.3fe+57 expected_time≈%.2fs (at %.0f H/s)\n",
 					res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>(),
