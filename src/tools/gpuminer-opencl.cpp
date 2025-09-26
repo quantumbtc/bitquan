@@ -777,11 +777,12 @@ static void MinerLoop()
 			if (gpu_debug) {
 				arith_uint256 atarget; bool neg=false, of=false; atarget.SetCompact(block.nBits, &neg, &of);
 				// approximate expected_hashes ≈ 2^256 / target using high limbs
-				arith_uint256 two256_hi = arith_uint256::ONE << 255; // use 2^255 then x2
-				arith_uint256 approx = (two256_hi / (atarget == 0 ? arith_uint256::ONE : atarget)) << 1;
-				uint64_t hi3 = approx.GetUint64(3);
-				uint64_t hi2 = approx.GetUint64(2);
-				double exp_hashes = (double)hi3 + (double)hi2 / (double)(1ULL<<64);
+				arith_uint256 two256_hi = arith_uint256(1) << 255; // use 2^255 then x2
+				arith_uint256 approx = (two256_hi / (atarget == 0 ? arith_uint256(1) : atarget)) << 1;
+				uint256 approx_uint = ArithToUint256(approx);
+				uint64_t hi3 = approx_uint.GetUint64(3);
+				uint64_t hi2 = approx_uint.GetUint64(2);
+				double exp_hashes = (double)hi3 + (double)hi2 / (double)(1ULL << 63); // Use 63 instead of 64 to avoid overflow warning
 				double exp_seconds = hps > 0.0 ? (exp_hashes / hps) : 0.0;
 				tfm::format(std::cout, "[Debug] height=%d bits=%08x target=%s expected_hashes≈%.3fe+57 expected_time≈%.2fs (at %.0f H/s)\n",
 					res.find_value("height").isNull() ? -1 : res.find_value("height").getInt<int>(),
