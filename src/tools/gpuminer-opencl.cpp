@@ -477,6 +477,30 @@ __kernel void randomq_kernel(
     uchar final32[32];
     sha256_bytes(rq32, 32, final32);
 
+    // Compare using arith_uint256 logic (matches node verification exactly)
+    // Convert final32 to uint256 (little-endian interpretation) - same as UintToArith256
+    ulong hash_parts[4] = {0};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            hash_parts[i] |= ((ulong)final32[i*8 + j]) << (j * 8);
+        }
+    }
+    
+    // Convert target to uint256 (little-endian interpretation) - same as SetCompact
+    ulong target_parts[4] = {0};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            target_parts[i] |= ((ulong)target[i*8 + j]) << (j * 8);
+        }
+    }
+    
+    // Compare as 256-bit integers (little-endian) - same as arith_uint256 <= comparison
+    bool meets_target = true;
+    for (int i = 3; i >= 0; --i) {
+        if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
+        if (hash_parts[i] > target_parts[i]) { meets_target = false; break; }
+    }
+
     // Write debug info for gid==0 if buffer provided
     if (debug_buf != 0 && gid == 0) {
         // first32
@@ -501,30 +525,6 @@ __kernel void randomq_kernel(
         debug_buf[154] = (uchar)((nonce >> 8) & 0xFF);
         debug_buf[155] = (uchar)((nonce >> 16) & 0xFF);
         debug_buf[156] = (uchar)((nonce >> 24) & 0xFF);
-    }
-
-    // Compare using arith_uint256 logic (matches node verification exactly)
-    // Convert final32 to uint256 (little-endian interpretation) - same as UintToArith256
-    ulong hash_parts[4] = {0};
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 8; ++j) {
-            hash_parts[i] |= ((ulong)final32[i*8 + j]) << (j * 8);
-        }
-    }
-    
-    // Convert target to uint256 (little-endian interpretation) - same as SetCompact
-    ulong target_parts[4] = {0};
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 8; ++j) {
-            target_parts[i] |= ((ulong)target[i*8 + j]) << (j * 8);
-        }
-    }
-    
-    // Compare as 256-bit integers (little-endian) - same as arith_uint256 <= comparison
-    bool meets_target = true;
-    for (int i = 3; i >= 0; --i) {
-        if (hash_parts[i] < target_parts[i]) { meets_target = true; break; }
-        if (hash_parts[i] > target_parts[i]) { meets_target = false; break; }
     }
     
     if (meets_target && atom_cmpxchg(found_flag, 0, 1) == 0) {
