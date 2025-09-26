@@ -876,6 +876,28 @@ static void MinerLoop()
 						tfm::format(std::cout, "[CPU first32] %s\n", hex16(c_first).c_str());
 						tfm::format(std::cout, "[CPU rq32]    %s\n", hex16(c_rq).c_str());
 						tfm::format(std::cout, "[CPU final32] %s\n", hex16(c_final).c_str());
+						
+						// Compare GPU vs CPU results
+						bool gpu_cpu_match = true;
+						for (int i = 0; i < 32; ++i) {
+							if (dbg2[88 + i] != c_final[i]) {
+								gpu_cpu_match = false;
+								break;
+							}
+						}
+						tfm::format(std::cout, "[GPU-CPU match] %s\n", gpu_cpu_match ? "YES" : "NO");
+						
+						// Test target comparison logic
+						uint256 powhash_uint256;
+						std::memcpy(powhash_uint256.begin(), c_final, 32);
+						arith_uint256 powhash_arith = UintToArith256(powhash_uint256);
+						arith_uint256 target_arith; bool neg2=false, of2=false; target_arith.SetCompact(block.nBits, &neg2, &of2);
+						bool cpu_meets = (!neg2 && !of2 && target_arith != 0 && powhash_arith <= target_arith);
+						
+						tfm::format(std::cout, "[CPU target]  %s\n", target_arith.GetHex().c_str());
+						tfm::format(std::cout, "[CPU hash]    %s\n", powhash_arith.GetHex().c_str());
+						tfm::format(std::cout, "[CPU meets]   %s\n", cpu_meets ? "YES" : "NO");
+						tfm::format(std::cout, "[GPU meets]   %s\n", dbg2[152] ? "YES" : "NO");
 						std::cout.flush();
 					}
 				}
